@@ -5,7 +5,7 @@ import { ClientKafka } from '@nestjs/microservices';
 import { EventDocument } from './schema/event.schema';
 import { VenueService } from '../venue/venue.service';
 import { CreateEventDto } from './dto';
-import { EventCreateMessage, EventSeat } from './interfaces';
+import { EventCreateMessage, EventSeat } from '@app/common';
 
 @Injectable()
 export class EventService {
@@ -21,7 +21,6 @@ export class EventService {
 
   async create(createEventDto: CreateEventDto): Promise<EventDocument> {
     const venue = await this.venueService.findById(createEventDto.venueId);
-
     if (!venue) {
       throw new NotFoundException('Venue not found');
     }

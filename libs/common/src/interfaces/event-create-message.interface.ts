@@ -13,9 +13,9 @@ export interface EventSeat {
 
 export interface EventCreateMessage {
   eventId: string;
-  venueId: string;
-  venueName: string;
-  title: string;
-  startsAt: Date;
+  venueId?: string;
+  venueName?: string;
+  title?: string;
+  startsAt?: Date;
   seats: EventSeat[];
 }
