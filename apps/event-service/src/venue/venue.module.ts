@@ -10,5 +10,6 @@ import { VenueService } from './venue.service';
   ],
   controllers: [VenueController],
   providers: [VenueService],
+  exports: [VenueService],
 })
 export class VenueModule {}

@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 
 import { MongoDatabaseModule } from '@app/database';
 import { VenueModule } from './venue/venue.module';
+import { EventModule } from './event/event.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { VenueModule } from './venue/venue.module';
     }),
     MongoDatabaseModule,
     VenueModule,
+    EventModule,
   ],
 })
 export class EventServiceModule {}

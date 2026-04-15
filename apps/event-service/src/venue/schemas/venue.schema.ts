@@ -38,7 +38,6 @@ export const RowSchema = SchemaFactory.createForClass(Row);
 
 @Schema()
 export class Section {
-  @Prop({ type: Types.ObjectId, auto: true })
   _id: Types.ObjectId;
 
   @Prop({ required: true })
