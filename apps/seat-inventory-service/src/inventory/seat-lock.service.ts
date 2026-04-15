@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import Redis from 'ioredis';
 import { REDIS_CLIENT } from '@app/redis';
+import { SeatLockInfoResponse } from './interfaces';
 
 @Injectable()
 export class SeatLockService {
@@ -93,11 +94,7 @@ export class SeatLockService {
   async getLockInfo(
     eventId: string,
     seatId: string,
-  ): Promise<{
-    userId: string;
-    sessionId: string;
-    lockedAt: number;
-  } | null> {
+  ): Promise<SeatLockInfoResponse | null> {
     const key = `lock:event:${eventId}:seat:${seatId}`;
     const data = await this.redis.get(key);
 

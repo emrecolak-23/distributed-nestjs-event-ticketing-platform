@@ -55,6 +55,27 @@ export class BookingOrchestratorService {
       );
     }
 
+    const verifyHoldResponse = await fetch(
+      `
+        http://localhost:3002/api/hold/verify
+        `,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          eventId: dto.eventId,
+          seatIds,
+          userId: dto.userId,
+        }),
+      },
+    );
+
+    if (!verifyHoldResponse.ok) {
+      const error = await verifyHoldResponse.json();
+      throw new BadRequestException(
+        error.message || 'Hold verification failed',
+      );
+    }
+
     const totalAmount = selectedSeats.reduce(
       (acc, seat) => acc + parseFloat(seat.price),
       0,

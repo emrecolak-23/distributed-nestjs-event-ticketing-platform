@@ -6,6 +6,7 @@ import { SeatLockReleaseReason } from './enums';
 import { InventoryService } from '../inventory/inventory.service';
 import { SeatStatus } from '../inventory/enums';
 import { SeatLockService } from '../inventory/seat-lock.service';
+import { SeatLockInfoResponse } from '../inventory/interfaces';
 
 @Injectable()
 export class HoldService {
@@ -145,5 +146,12 @@ export class HoldService {
     } finally {
       await queryRunner.release();
     }
+  }
+
+  async getLockInfo(
+    eventId: string,
+    seatId: string,
+  ): Promise<SeatLockInfoResponse | null> {
+    return this.seatLockService.getLockInfo(eventId, seatId);
   }
 }
