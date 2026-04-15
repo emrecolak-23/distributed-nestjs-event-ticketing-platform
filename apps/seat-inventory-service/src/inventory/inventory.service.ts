@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { SeatInventory } from './entities/inventory.entity';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { EventCreateMessage } from '@app/common';
 import { SeatStatus } from './enums';
 
@@ -55,5 +55,22 @@ export class InventoryService {
     return this.repo.find({
       where: { eventId, status: SeatStatus.AVAILABLE },
     });
+  }
+
+  async findBySeatIds(
+    eventId: string,
+    seatIds: string[],
+  ): Promise<SeatInventory[]> {
+    return this.repo.find({
+      where: { eventId, seatId: In(seatIds) },
+    });
+  }
+
+  async updateStatus(
+    eventId: string,
+    seatIds: string[],
+    status: SeatStatus,
+  ): Promise<void> {
+    await this.repo.update({ eventId, seatId: In(seatIds) }, { status });
   }
 }
