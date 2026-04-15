@@ -40,9 +40,9 @@ export class BookingItem {
   @Column('decimal', { precision: 10, scale: 2 })
   unitPrice: number;
 
-  @Column({ nullable: true })
-  attendeeName: string;
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  attendeeName: string | null;
 
-  @Column({ nullable: true })
-  attendeeEmail: string;
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  attendeeEmail: string | null;
 }

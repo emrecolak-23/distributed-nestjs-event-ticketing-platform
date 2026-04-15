@@ -30,6 +30,7 @@ export class InventoryService {
         seatId: seat.seatId,
         sectionId: seat.sectionId,
         sectionName: seat.sectionName,
+        ticketTypeId: seat.ticketTypeId,
         ticketTypeName: seat.ticketTypeName,
         price: seat.price,
         currency: seat.currency,

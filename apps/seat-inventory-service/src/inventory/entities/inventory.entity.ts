@@ -28,6 +28,9 @@ export class SeatInventory {
   sectionName: string;
 
   @Column()
+  ticketTypeId: string;
+
+  @Column()
   ticketTypeName: string;
 
   @Column('decimal', { precision: 10, scale: 2 })

@@ -3,6 +3,7 @@ import {
   Logger,
   BadRequestException,
   NotFoundException,
+  Inject,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Booking } from './entities/booking.entity';
@@ -11,32 +12,52 @@ import { CreateBookingDto } from './dtos/create-booking.dto';
 import { randomUUID } from 'crypto';
 import { BookingStatus } from './enums';
 import { BookingItem } from './entities/booking-item.entity';
+import { SEAT_INVENTORY_PACKAGE } from '@app/grpc';
+import type { ClientGrpc } from '@nestjs/microservices';
+import { firstValueFrom } from 'rxjs';
+import { SeatInventoryServiceClient } from '@app/grpc/generated/seat-inventory';
+
+interface SeatInventoryGrpcService {
+  getSeatsByEvent(data: { eventId: string }): any;
+  getAvailableSeats(data: { eventId: string }): any;
+  verifyHold(data: { eventId: string; seatIds: string[]; userId: string }): any;
+  holdSeats(data: {
+    eventId: string;
+    seatIds: string[];
+    userId: string;
+    sessionId: string;
+  }): any;
+}
 
 @Injectable()
 export class BookingOrchestratorService {
   private readonly logger = new Logger(BookingOrchestratorService.name);
   private readonly BOOKING_EXPIRY_MS = 10 * 60 * 1000;
+  private seatInventoryService: SeatInventoryServiceClient;
 
   constructor(
     @InjectRepository(Booking)
     private readonly bookingRepo: Repository<Booking>,
     private readonly dataSource: DataSource,
+    @Inject(SEAT_INVENTORY_PACKAGE) private readonly grpcClient: ClientGrpc,
   ) {}
+
+  onModuleInit() {
+    this.seatInventoryService =
+      this.grpcClient.getService<SeatInventoryServiceClient>(
+        'SeatInventoryService',
+      );
+  }
 
   async createBooking(dto: CreateBookingDto) {
     const seatIds = dto.items.map((item) => item.seatId);
 
-    const inventoryResponse = await fetch(
-      `http://localhost:3002/api/inventory/events/${dto.eventId}`,
+    const response = await firstValueFrom(
+      this.seatInventoryService.getSeatsByEvent({ eventId: dto.eventId }),
     );
 
-    if (!inventoryResponse.ok) {
-      throw new BadRequestException('Failed to fetch seat inventory');
-    }
-
-    const allInventory = await inventoryResponse.json();
-    const selectedSeats = allInventory.filter((seat: any) =>
-      seatIds.includes(seat.seatId),
+    const selectedSeats = response.seats.filter((s: any) =>
+      seatIds.includes(s.seatId),
     );
 
     if (selectedSeats.length !== seatIds.length) {
@@ -55,24 +76,17 @@ export class BookingOrchestratorService {
       );
     }
 
-    const verifyHoldResponse = await fetch(
-      `
-        http://localhost:3002/api/hold/verify
-        `,
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          eventId: dto.eventId,
-          seatIds,
-          userId: dto.userId,
-        }),
-      },
+    const { verified } = await firstValueFrom(
+      this.seatInventoryService.verifyHold({
+        eventId: dto.eventId,
+        seatIds,
+        userId: dto.userId,
+      }),
     );
 
-    if (!verifyHoldResponse.ok) {
-      const error = await verifyHoldResponse.json();
+    if (!verified) {
       throw new BadRequestException(
-        error.message || 'Hold verification failed',
+        'Hold verification failed — seats not held by this user',
       );
     }
 
@@ -102,19 +116,24 @@ export class BookingOrchestratorService {
 
       const bookingItems = dto.items.map((item) => {
         const seat = selectedSeats.find((s) => s.seatId === item.seatId);
-        return {
-          bookingId: savedBooking.id,
-          seatInventoryId: seat.id,
-          seatId: seat.seatId,
-          ticketTypeId: seat.ticketTypeId,
-          ticketTypeName: seat.ticketTypeName,
-          sectionName: seat.sectionName,
-          row: seat.row,
-          seatNumber: seat.seatNumber,
-          unitPrice: seat.price,
-          attendeeName: item.attendeeName,
-          attendeeEmail: item.attendeeEmail,
-        };
+        if (!seat) {
+          throw new BadRequestException(
+            `Seat ${item.seatId} not found in inventory`,
+          );
+        }
+        const bookingItem = new BookingItem();
+        bookingItem.booking = savedBooking;
+        bookingItem.seatInventoryId = seat.id;
+        bookingItem.seatId = seat.seatId;
+        bookingItem.ticketTypeId = seat.ticketTypeId;
+        bookingItem.ticketTypeName = seat.ticketTypeName;
+        bookingItem.sectionName = seat.sectionName;
+        bookingItem.row = seat.row;
+        bookingItem.seatNumber = seat.seatNumber;
+        bookingItem.unitPrice = parseFloat(seat.price);
+        bookingItem.attendeeName = item.attendeeName ?? null;
+        bookingItem.attendeeEmail = item.attendeeEmail ?? null;
+        return bookingItem;
       });
 
       await queryRunner.manager.save(BookingItem, bookingItems);

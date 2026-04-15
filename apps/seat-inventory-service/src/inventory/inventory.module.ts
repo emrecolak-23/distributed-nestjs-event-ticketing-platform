@@ -4,6 +4,7 @@ import { InventoryController } from './inventory.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SeatInventory } from './entities/inventory.entity';
 import { InventoryConsumer } from './inventory.consumer';
+import { InventoryGrpcController } from './inventory.grpc-controller';
 import { SeatLockService } from './seat-lock.service';
 
 @Module({

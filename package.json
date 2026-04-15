@@ -21,6 +21,7 @@
     "test:e2e": "jest --config ./apps/ticketing-platform/test/jest-e2e.json"
   },
   "dependencies": {
+    "@bufbuild/protobuf": "^2.11.0",
     "@grpc/grpc-js": "^1.14.3",
     "@grpc/proto-loader": "^0.8.0",
     "@nestjs-modules/ioredis": "^2.2.1",

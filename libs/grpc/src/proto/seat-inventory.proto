@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+
+package seat_inventory;
+
+service SeatInventoryService {
+    rpc GetSeatsByEvent (GetSeatsByEventRequest) returns (GetSeatsByEventResponse);
+    rpc GetAvailableSeats (GetSeatsByEventRequest) returns (GetSeatsByEventResponse);
+    rpc VerifyHold (VerifyHoldRequest) returns (VerifyHoldResponse);
+    rpc HoldSeats (HoldSeatsRequest) returns (HoldSeatsResponse);
+    rpc ReleaseSeats (ReleaseSeatsRequest) returns (ReleaseSeatsResponse);
+}
+
+message SeatInfo {
+    string id = 1;
+    string event_id = 2;
+    string seat_id = 3;
+    string section_id = 4;
+    string section_name = 5;
+    string ticket_type_id = 6;
+    string ticket_type_name = 7;
+    string price = 8;
+    string currency = 9;
+    string row = 10;
+    string seat_number = 11;
+    string seat_type = 12;
+    string status = 13;
+}
+
+
+message GetSeatsByEventRequest {
+    string event_id = 1;
+}
+
+message GetSeatsByEventResponse {
+    repeated SeatInfo seats = 1;
+}
+
+message VerifyHoldRequest {
+    string event_id = 1;
+    repeated string seat_ids = 2;
+    string user_id = 3;
+}
+
+message VerifyHoldResponse {
+    bool verified = 1;
+}
+
+message HoldSeatsRequest {
+   string event_id = 1;
+   repeated string seat_ids = 2;
+   string user_id = 3;
+   string session_id = 4;
+}
+
+message HoldSeatsResponse {
+    bool success = 1;
+    repeated string hold_ids = 2;
+    string expires_at = 3;
+    repeated string failed_seat_ids = 4;
+}
+
+message ReleaseSeatsRequest {
+    string event_id = 1;
+    repeated string seat_ids = 2;
+    string user_id = 3;
+    string reason = 4;
+}
+
+message ReleaseSeatsResponse {
+    bool success = 1;
+}

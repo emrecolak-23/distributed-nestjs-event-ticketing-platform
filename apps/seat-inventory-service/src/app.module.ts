@@ -4,6 +4,7 @@ import { InventoryModule } from './inventory/inventory.module';
 import { PostgresDatabaseModule } from '@app/database';
 import { HoldModule } from './hold/hold.module';
 import { RedisModule } from '@app/redis';
+import { GrpcServerModule } from './grpc/grpc-server.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { RedisModule } from '@app/redis';
     RedisModule.register(),
     InventoryModule,
     HoldModule,
+    GrpcServerModule,
   ],
 })
 export class AppModule {}
