@@ -1,6 +1,6 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull } from 'typeorm';
+import { Repository, IsNull, DataSource } from 'typeorm';
 import { SeatHold } from './entitites/seat-hold.entity';
 import { SeatLockReleaseReason } from './enums';
 import { InventoryService } from '../inventory/inventory.service';
@@ -10,12 +10,13 @@ import { SeatLockService } from '../inventory/seat-lock.service';
 @Injectable()
 export class HoldService {
   private readonly logger = new Logger(HoldService.name);
-  private readonly HOLD_DURATION_MS = 10 * 60 * 1000; // 10 minutes
+  private readonly HOLD_DURATION_MS = 10 * 60 * 1000;
 
   constructor(
     @InjectRepository(SeatHold) private readonly holdRepo: Repository<SeatHold>,
     private readonly seatLockService: SeatLockService,
     private readonly inventoryService: InventoryService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async holdSeats(
@@ -23,10 +24,7 @@ export class HoldService {
     seatIds: string[],
     userId: string,
     sessionId: string,
-  ): Promise<{
-    holdIds: string[];
-    expiresAt: Date;
-  }> {
+  ): Promise<{ holdIds: string[]; expiresAt: Date }> {
     const lockResult = await this.seatLockService.lockSeats(
       eventId,
       seatIds,
@@ -40,6 +38,10 @@ export class HoldService {
       );
     }
 
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
     try {
       const inventories = await this.inventoryService.findBySeatIds(
         eventId,
@@ -51,22 +53,15 @@ export class HoldService {
       );
 
       if (unavailable.length > 0) {
-        await this.seatLockService.releaseSeats(
-          eventId,
-          unavailable.map((inv) => inv.seatId),
-          userId,
-        );
-
         throw new BadRequestException(
           `Seats not available: ${unavailable.map((s) => s.seatId).join(', ')}`,
         );
       }
 
-      await this.inventoryService.updateStatus(
-        eventId,
-        seatIds,
-        SeatStatus.HELD,
-      );
+      for (const inv of inventories) {
+        inv.status = SeatStatus.HELD;
+      }
+      await queryRunner.manager.save(inventories);
 
       const expiresAt = new Date(Date.now() + this.HOLD_DURATION_MS);
 
@@ -78,7 +73,7 @@ export class HoldService {
           );
         }
         return this.holdRepo.create({
-          seatInventoryId: inventory!.id,
+          seatInventoryId: inventory.id,
           eventId,
           seatId,
           userId,
@@ -87,7 +82,8 @@ export class HoldService {
         });
       });
 
-      const savedHolds = await this.holdRepo.save(holds);
+      const savedHolds = await queryRunner.manager.save(SeatHold, holds);
+      await queryRunner.commitTransaction();
 
       this.logger.log(
         `Held ${seatIds.length} seats for user ${userId}, expires at ${expiresAt.toISOString()}`,
@@ -98,8 +94,11 @@ export class HoldService {
         expiresAt,
       };
     } catch (error) {
+      await queryRunner.rollbackTransaction();
       await this.seatLockService.releaseSeats(eventId, seatIds, userId);
       throw error;
+    } finally {
+      await queryRunner.release();
     }
   }
 
@@ -109,32 +108,42 @@ export class HoldService {
     userId: string,
     reason: SeatLockReleaseReason,
   ): Promise<void> {
-    await this.seatLockService.releaseSeats(eventId, seatIds, userId);
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    await this.inventoryService.updateStatus(
-      eventId,
-      seatIds,
-      SeatStatus.AVAILABLE,
-    );
+    try {
+      const holds = await this.holdRepo.find({
+        where: { eventId, userId, releasedAt: IsNull() },
+      });
 
-    const holds = await this.holdRepo.find({
-      where: {
-        eventId,
-        userId,
-        releasedAt: IsNull(),
-      },
-    });
-
-    for (const hold of holds) {
-      if (seatIds.includes(hold.seatId)) {
-        hold.releasedAt = new Date();
-        hold.releaseReason = reason;
+      for (const hold of holds) {
+        if (seatIds.includes(hold.seatId)) {
+          hold.releasedAt = new Date();
+          hold.releaseReason = reason;
+        }
       }
-    }
+      await queryRunner.manager.save(SeatHold, holds);
 
-    await this.holdRepo.save(holds);
-    this.logger.log(
-      `Released ${seatIds.length} seats for user ${userId}, reason ${reason}`,
-    );
+      const inventories = await this.inventoryService.findBySeatIds(
+        eventId,
+        seatIds,
+      );
+      for (const inv of inventories) {
+        inv.status = SeatStatus.AVAILABLE;
+      }
+      await queryRunner.manager.save(inventories);
+
+      await queryRunner.commitTransaction();
+
+      await this.seatLockService.releaseSeats(eventId, seatIds, userId);
+
+      this.logger.log(`Released ${seatIds.length} seats, reason: ${reason}`);
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
   }
 }
