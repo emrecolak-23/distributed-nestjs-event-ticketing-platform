@@ -12,7 +12,7 @@ import { Booking } from './entities/booking.entity';
 import { DataSource, Repository } from 'typeorm';
 import { CreateBookingDto } from './dtos/create-booking.dto';
 import { randomUUID } from 'crypto';
-import { BookingStatus, OutboxStatus } from './enums';
+import { BookingStatus, OutboxStatus, RefundState } from './enums';
 import { BookingItem } from './entities/booking-item.entity';
 import { PAYMENT_PACKAGE, SEAT_INVENTORY_PACKAGE } from '@app/grpc';
 import type { ClientGrpc } from '@nestjs/microservices';
@@ -229,52 +229,131 @@ export class BookingOrchestratorService {
       );
     }
 
-    const seatIds = booking.items.map((item) => item.seatId);
-
-    const { success, failureReason } = await firstValueFrom(
-      this.paymentService.refundPayment({
-        bookingId: booking.id,
-        idempotencyKey: refundItempotencyKey,
-        reason: reason || 'User cancellation',
-      }),
-    );
-
-    if (!success) {
-      throw new BadRequestException(`Refund failed: ${failureReason}`);
+    if (!booking.refundState) {
+      booking.refundState = RefundState.REFUND_INITIATED;
+      booking.refundIdempotencyKey = refundItempotencyKey;
+      booking.cancellationReason = reason || 'User cancellation';
+      await this.bookingRepo.save(booking);
     }
 
-    await firstValueFrom(
-      this.seatInventoryService.releaseSoldSeats({
-        eventId: booking.eventId,
-        seatIds,
-      }),
-    );
-
-    booking.status = BookingStatus.REFUNDED;
-    booking.cancelledAt = new Date();
-    booking.cancellationReason = reason || 'User cancellation';
-    await this.bookingRepo.save(booking);
-
-    this.kafkaClient.emit('booking.refunded', {
-      key: booking.id,
-      value: {
-        bookingId: booking.id,
-        bookingNumber: booking.bookingNumber,
-        userId: booking.userId,
-        eventId: booking.eventId,
-        totalAmount: booking.totalAmount,
-        currency: booking.currency,
-        items: booking.items.map((item) => ({
-          sectionName: item.sectionName,
-          row: item.row,
-          seatNumber: item.seatNumber,
-          attendeeName: item.attendeeName,
-          attendeeEmail: item.attendeeEmail,
-        })),
-      },
-    });
+    await this.processRefundStateMachine(booking);
 
     this.logger.log(`Booking ${booking.bookingNumber} refunded`);
+
+    return booking;
+  }
+
+  private async processRefundStateMachine(booking: Booking): Promise<Booking> {
+    const seatIds = booking.items.map((item) => item.seatId);
+    const maxSteps = 5;
+
+    for (let step = 0; step < maxSteps; step++) {
+      this.logger.log(
+        `Refund state machine [${booking.bookingNumber}]: ${booking.refundState}`,
+      );
+
+      try {
+        switch (booking.refundState) {
+          case RefundState.REFUND_INITIATED: {
+            const { success, failureReason } = await firstValueFrom(
+              this.paymentService.refundPayment({
+                bookingId: booking.id,
+                idempotencyKey: booking.refundIdempotencyKey!,
+                reason: booking.cancellationReason || 'User cancellation',
+              }),
+            );
+
+            if (!success) {
+              booking.refundState = RefundState.FAILED;
+              booking.refundLastError = failureReason;
+              await this.bookingRepo.save(booking);
+              throw new BadRequestException(`Refund failed: ${failureReason}`);
+            }
+
+            booking.refundState = RefundState.PAYMENT_REFUNDED;
+            await this.bookingRepo.save(booking);
+            break;
+          }
+          case RefundState.PAYMENT_REFUNDED: {
+            await firstValueFrom(
+              this.seatInventoryService.releaseSoldSeats({
+                eventId: booking.eventId,
+                seatIds,
+              }),
+            );
+
+            booking.refundState = RefundState.SEATS_RELEASED;
+            await this.bookingRepo.save(booking);
+            break;
+          }
+          case RefundState.SEATS_RELEASED: {
+            const queryRunner = this.dataSource.createQueryRunner();
+            await queryRunner.connect();
+            await queryRunner.startTransaction();
+
+            try {
+              booking.status = BookingStatus.REFUNDED;
+              booking.cancelledAt = new Date();
+              booking.refundState = RefundState.COMPLETED;
+              await queryRunner.manager.save(Booking, booking);
+
+              const refundedOutbox = this.outboxRepo.create({
+                aggregateType: 'booking',
+                aggregateId: booking.id,
+                eventType: 'booking.refunded',
+                payload: {
+                  bookingId: booking.id,
+                  bookingNumber: booking.bookingNumber,
+                  userId: booking.userId,
+                  eventId: booking.eventId,
+                  totalAmount: booking.totalAmount,
+                  currency: booking.currency,
+                  items: booking.items.map((item) => ({
+                    sectionName: item.sectionName,
+                    row: item.row,
+                    seatNumber: item.seatNumber,
+                    attendeeName: item.attendeeName,
+                    attendeeEmail: item.attendeeEmail,
+                  })),
+                },
+                status: OutboxStatus.PENDING,
+              });
+
+              await queryRunner.manager.save(Outbox, refundedOutbox);
+              await queryRunner.commitTransaction();
+            } catch (error) {
+              await queryRunner.rollbackTransaction();
+              throw error;
+            } finally {
+              await queryRunner.release();
+            }
+            this.logger.log(
+              `Booking ${booking.bookingNumber} refund completed`,
+            );
+
+            return booking;
+          }
+          case RefundState.COMPLETED: {
+            return booking;
+          }
+          case RefundState.FAILED: {
+            throw new BadRequestException(
+              `Refund failed: ${booking.refundLastError}`,
+            );
+          }
+          default: {
+            throw new BadRequestException(
+              `Invalid refund state: ${booking.refundState}`,
+            );
+          }
+        }
+      } catch (error) {
+        booking.refundRetryCount++;
+        booking.refundLastError = error.message;
+        await this.bookingRepo.save(booking);
+        throw error;
+      }
+    }
 
     return booking;
   }

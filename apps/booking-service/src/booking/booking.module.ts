@@ -14,6 +14,7 @@ import {
 } from '@app/grpc';
 import { Outbox } from './entities/outbox.entity';
 import { OutboxWorker } from './outbox.worker';
+import { RefundRecoveryWorker } from './refund-recovery.worker';
 import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
@@ -41,7 +42,7 @@ import { ScheduleModule } from '@nestjs/schedule';
     ScheduleModule.forRoot(),
   ],
   controllers: [BookingController],
-  providers: [BookingOrchestratorService, OutboxWorker],
+  providers: [BookingOrchestratorService, OutboxWorker, RefundRecoveryWorker],
   exports: [BookingOrchestratorService],
 })
 export class BookingModule {}

@@ -7,7 +7,7 @@ import {
   OneToMany,
   Index,
 } from 'typeorm';
-import { BookingStatus } from '../enums';
+import { BookingStatus, RefundState } from '../enums';
 import { BookingItem } from './booking-item.entity';
 
 @Entity('booking')
@@ -53,6 +53,19 @@ export class Booking {
 
   @OneToMany(() => BookingItem, (item) => item.booking)
   items: BookingItem[];
+
+  @Column({ type: 'varchar', nullable: true })
+  @Index()
+  refundState: RefundState;
+
+  @Column({ type: 'varchar', nullable: true })
+  refundIdempotencyKey: string | null;
+
+  @Column({ default: 0 })
+  refundRetryCount: number;
+
+  @Column({ type: 'varchar', nullable: true })
+  refundLastError: string | null;
 
   @CreateDateColumn()
   createdAt: Date;

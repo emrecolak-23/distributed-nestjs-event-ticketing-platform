@@ -79,6 +79,9 @@ export class OutboxWorker implements OnModuleInit {
       case 'booking.confirmed':
         await this.handleBookingConfirmed(entry);
         break;
+      case 'booking.refunded':
+        await this.handleBookingRefunded(entry);
+        break;
       default:
         this.logger.warn(`Unknown event type: ${entry.eventType}`);
         break;
@@ -111,6 +114,17 @@ export class OutboxWorker implements OnModuleInit {
 
     this.logger.log(
       `Outbox: Emitted booking.confirmed for ${entry.aggregateId}`,
+    );
+  }
+
+  private async handleBookingRefunded(entry: Outbox) {
+    this.kafkaClient.emit('booking.refunded', {
+      key: entry.aggregateId,
+      value: entry.payload,
+    });
+
+    this.logger.log(
+      `Outbox: Emitted booking.refunded for ${entry.aggregateId}`,
     );
   }
 }
