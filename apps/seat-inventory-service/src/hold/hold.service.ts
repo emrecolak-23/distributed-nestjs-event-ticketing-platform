@@ -154,4 +154,51 @@ export class HoldService {
   ): Promise<SeatLockInfoResponse | null> {
     return this.seatLockService.getLockInfo(eventId, seatId);
   }
+
+  async markAsSold(
+    eventId: string,
+    seatIds: string[],
+    userId: string,
+  ): Promise<void> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const inventories = await this.inventoryService.findBySeatIds(
+        eventId,
+        seatIds,
+      );
+
+      for (const inv of inventories) {
+        inv.status = SeatStatus.SOLD;
+      }
+
+      await queryRunner.manager.save(inventories);
+
+      const holds = await this.holdRepo.find({
+        where: { eventId, userId, releasedAt: IsNull() },
+      });
+
+      for (const hold of holds) {
+        if (seatIds.includes(hold.seatId)) {
+          hold.releasedAt = new Date();
+          hold.releaseReason = SeatLockReleaseReason.PAYMENT_SUCCESS;
+        }
+      }
+
+      await queryRunner.manager.save(SeatHold, holds);
+      await queryRunner.commitTransaction();
+      await this.seatLockService.releaseSeats(eventId, seatIds, userId);
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
+
+    this.logger.log(
+      `Marked ${seatIds.length} seats as sold for user ${userId}`,
+    );
+  }
 }

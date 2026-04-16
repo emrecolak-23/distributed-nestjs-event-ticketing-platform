@@ -105,4 +105,22 @@ export class InventoryGrpcController {
       return { success: false };
     }
   }
+
+  @GrpcMethod('SeatInventoryService', 'MarkSeatsAsSold')
+  async markSeatsAsSold(data: {
+    eventId: string;
+    seatIds: string[];
+    userId: string;
+  }) {
+    try {
+      await this.holdService.markAsSold(
+        data.eventId,
+        data.seatIds,
+        data.userId,
+      );
+      return { success: true };
+    } catch (error) {
+      return { success: false };
+    }
+  }
 }

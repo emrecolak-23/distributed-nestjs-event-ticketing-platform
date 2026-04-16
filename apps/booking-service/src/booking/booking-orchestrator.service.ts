@@ -121,8 +121,15 @@ export class BookingOrchestratorService {
       }
 
       if (payment.status === 'succeeded') {
-        savedBooking.status = BookingStatus.CONFIRMED;
+        await firstValueFrom(
+          this.seatInventoryService.markSeatsAsSold({
+            eventId: dto.eventId,
+            seatIds,
+            userId: dto.userId,
+          }),
+        );
         savedBooking.confirmedAt = new Date();
+        savedBooking.status = BookingStatus.CONFIRMED;
         await this.bookingRepo.save(savedBooking);
       } else {
         savedBooking.status = BookingStatus.CANCELLED;
