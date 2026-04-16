@@ -12,10 +12,13 @@ import {
   SEAT_INVENTORY_PACKAGE,
   seatInventoryGrpcOptions,
 } from '@app/grpc';
+import { Outbox } from './entities/outbox.entity';
+import { OutboxWorker } from './outbox.worker';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Booking, BookingItem]),
+    TypeOrmModule.forFeature([Booking, BookingItem, Outbox]),
     KafkaClientModule.register('BOOKING_KAFKA'),
     ClientsModule.register([
       {
@@ -35,9 +38,10 @@ import {
         },
       },
     ]),
+    ScheduleModule.forRoot(),
   ],
   controllers: [BookingController],
-  providers: [BookingOrchestratorService],
+  providers: [BookingOrchestratorService, OutboxWorker],
   exports: [BookingOrchestratorService],
 })
 export class BookingModule {}

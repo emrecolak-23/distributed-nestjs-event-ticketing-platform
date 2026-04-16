@@ -12,7 +12,7 @@ import { Booking } from './entities/booking.entity';
 import { DataSource, Repository } from 'typeorm';
 import { CreateBookingDto } from './dtos/create-booking.dto';
 import { randomUUID } from 'crypto';
-import { BookingStatus } from './enums';
+import { BookingStatus, OutboxStatus } from './enums';
 import { BookingItem } from './entities/booking-item.entity';
 import { PAYMENT_PACKAGE, SEAT_INVENTORY_PACKAGE } from '@app/grpc';
 import type { ClientGrpc } from '@nestjs/microservices';
@@ -20,6 +20,7 @@ import { firstValueFrom } from 'rxjs';
 import { SeatInventoryServiceClient } from '@app/grpc/generated/seat-inventory';
 import { PaymentServiceClient } from '@app/grpc/generated/payment';
 import { ClientKafka } from '@nestjs/microservices';
+import { Outbox } from './entities/outbox.entity';
 
 @Injectable()
 export class BookingOrchestratorService {
@@ -31,6 +32,7 @@ export class BookingOrchestratorService {
   constructor(
     @InjectRepository(Booking)
     private readonly bookingRepo: Repository<Booking>,
+    @InjectRepository(Outbox) private readonly outboxRepo: Repository<Outbox>,
     private readonly dataSource: DataSource,
     @Inject(SEAT_INVENTORY_PACKAGE) private readonly grpcClient: ClientGrpc,
     @Inject(PAYMENT_PACKAGE) private readonly paymentClient: ClientGrpc,
@@ -125,48 +127,12 @@ export class BookingOrchestratorService {
       }
 
       if (payment.status === 'succeeded') {
-        await firstValueFrom(
-          this.seatInventoryService.markSeatsAsSold({
-            eventId: dto.eventId,
-            seatIds,
-            userId: dto.userId,
-          }),
+        await this.confirmBookingWithOutbox(
+          savedBooking,
+          dto.eventId,
+          dto.userId,
+          seatIds,
         );
-        savedBooking.confirmedAt = new Date();
-        savedBooking.status = BookingStatus.CONFIRMED;
-        await this.bookingRepo.save(savedBooking);
-
-        const bookingWithItems = await this.bookingRepo.findOne({
-          where: { id: savedBooking.id },
-          relations: ['items'],
-        });
-
-        if (!bookingWithItems) {
-          throw new InternalServerErrorException(
-            'Booking not found after payment failure',
-          );
-        }
-
-        this.kafkaClient.emit('booking.confirmed', {
-          key: savedBooking.id,
-          value: {
-            bookingId: savedBooking.id,
-            bookingNumber: savedBooking.bookingNumber,
-            userId: savedBooking.userId,
-            eventId: savedBooking.eventId,
-            totalAmount: savedBooking.totalAmount,
-            currency: savedBooking.currency,
-            status: savedBooking.status,
-            items: bookingWithItems.items.map((item) => ({
-              seatId: item.seatId,
-              sectionName: item.sectionName,
-              row: item.row,
-              seatNumber: item.seatNumber,
-              attendeeName: item.attendeeName,
-              attendeeEmail: item.attendeeEmail,
-            })),
-          },
-        });
       } else {
         savedBooking.status = BookingStatus.CANCELLED;
         savedBooking.cancelledAt = new Date();
@@ -234,6 +200,83 @@ export class BookingOrchestratorService {
       where: { id: savedBooking.id },
       relations: ['items'],
     });
+  }
+
+  async cancelBooking(
+    bookingId: string,
+    userId: string,
+    refundItempotencyKey: string,
+    reason?: string,
+  ) {
+    const booking = await this.bookingRepo.findOne({
+      where: { id: bookingId },
+      relations: ['items'],
+    });
+
+    if (!booking) {
+      throw new NotFoundException('Booking not found');
+    }
+
+    if (booking.userId !== userId) {
+      throw new BadRequestException(
+        'You are not allowed to cancel this booking',
+      );
+    }
+
+    if (booking.status !== BookingStatus.CONFIRMED) {
+      throw new BadRequestException(
+        'Booking is not confirmed and cannot be cancelled',
+      );
+    }
+
+    const seatIds = booking.items.map((item) => item.seatId);
+
+    const { success, failureReason } = await firstValueFrom(
+      this.paymentService.refundPayment({
+        bookingId: booking.id,
+        idempotencyKey: refundItempotencyKey,
+        reason: reason || 'User cancellation',
+      }),
+    );
+
+    if (!success) {
+      throw new BadRequestException(`Refund failed: ${failureReason}`);
+    }
+
+    await firstValueFrom(
+      this.seatInventoryService.releaseSoldSeats({
+        eventId: booking.eventId,
+        seatIds,
+      }),
+    );
+
+    booking.status = BookingStatus.REFUNDED;
+    booking.cancelledAt = new Date();
+    booking.cancellationReason = reason || 'User cancellation';
+    await this.bookingRepo.save(booking);
+
+    this.kafkaClient.emit('booking.refunded', {
+      key: booking.id,
+      value: {
+        bookingId: booking.id,
+        bookingNumber: booking.bookingNumber,
+        userId: booking.userId,
+        eventId: booking.eventId,
+        totalAmount: booking.totalAmount,
+        currency: booking.currency,
+        items: booking.items.map((item) => ({
+          sectionName: item.sectionName,
+          row: item.row,
+          seatNumber: item.seatNumber,
+          attendeeName: item.attendeeName,
+          attendeeEmail: item.attendeeEmail,
+        })),
+      },
+    });
+
+    this.logger.log(`Booking ${booking.bookingNumber} refunded`);
+
+    return booking;
   }
 
   private async persistBooking(
@@ -328,80 +371,80 @@ export class BookingOrchestratorService {
     return `BK-${timestamp}-${random}`;
   }
 
-  async cancelBooking(
-    bookingId: string,
+  private async confirmBookingWithOutbox(
+    booking: Booking,
+    eventId: string,
     userId: string,
-    refundItempotencyKey: string,
-    reason?: string,
-  ) {
-    const booking = await this.bookingRepo.findOne({
-      where: { id: bookingId },
-      relations: ['items'],
-    });
+    seatIds: string[],
+  ): Promise<void> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    if (!booking) {
-      throw new NotFoundException('Booking not found');
-    }
+    try {
+      booking.status = BookingStatus.CONFIRMED;
+      booking.confirmedAt = new Date();
 
-    if (booking.userId !== userId) {
-      throw new BadRequestException(
-        'You are not allowed to cancel this booking',
+      await queryRunner.manager.save(booking);
+
+      const seatsSoldOutbox = this.outboxRepo.create({
+        aggregateType: 'booking',
+        aggregateId: booking.id,
+        eventType: 'seats.mark_sold',
+        payload: {
+          eventId,
+          userId,
+          seatIds,
+        },
+        status: OutboxStatus.PENDING,
+      });
+
+      const bookingWithItems = await this.bookingRepo.findOne({
+        where: { id: booking.id },
+        relations: ['items'],
+      });
+
+      if (!bookingWithItems) {
+        throw new InternalServerErrorException(
+          'Booking not found after confirmation',
+        );
+      }
+
+      const confirmedOutbox = this.outboxRepo.create({
+        aggregateType: 'booking',
+        aggregateId: booking.id,
+        eventType: 'booking.confirmed',
+        payload: {
+          bookingId: booking.id,
+          bookingNumber: booking.bookingNumber,
+          userId: booking.userId,
+          eventId,
+          totalAmount: booking.totalAmount,
+          currency: booking.currency,
+          items: bookingWithItems.items.map((item) => ({
+            seatId: item.seatId,
+            sectionName: item.sectionName,
+            row: item.row,
+            seatNumber: item.seatNumber,
+            attendeeName: item.attendeeName,
+            attendeeEmail: item.attendeeEmail,
+          })),
+        },
+        status: OutboxStatus.PENDING,
+      });
+
+      await queryRunner.manager.save(Outbox, seatsSoldOutbox);
+      await queryRunner.manager.save(Outbox, confirmedOutbox);
+      await queryRunner.commitTransaction();
+
+      this.logger.log(
+        `Booking ${booking.bookingNumber} confirmed with outbox entries`,
       );
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
     }
-
-    if (booking.status !== BookingStatus.CONFIRMED) {
-      throw new BadRequestException(
-        'Booking is not confirmed and cannot be cancelled',
-      );
-    }
-
-    const seatIds = booking.items.map((item) => item.seatId);
-
-    const { success, failureReason } = await firstValueFrom(
-      this.paymentService.refundPayment({
-        bookingId: booking.id,
-        idempotencyKey: refundItempotencyKey,
-        reason: reason || 'User cancellation',
-      }),
-    );
-
-    if (!success) {
-      throw new BadRequestException(`Refund failed: ${failureReason}`);
-    }
-
-    await firstValueFrom(
-      this.seatInventoryService.releaseSoldSeats({
-        eventId: booking.eventId,
-        seatIds,
-      }),
-    );
-
-    booking.status = BookingStatus.REFUNDED;
-    booking.cancelledAt = new Date();
-    booking.cancellationReason = reason || 'User cancellation';
-    await this.bookingRepo.save(booking);
-
-    this.kafkaClient.emit('booking.refunded', {
-      key: booking.id,
-      value: {
-        bookingId: booking.id,
-        bookingNumber: booking.bookingNumber,
-        userId: booking.userId,
-        eventId: booking.eventId,
-        totalAmount: booking.totalAmount,
-        currency: booking.currency,
-        items: booking.items.map((item) => ({
-          sectionName: item.sectionName,
-          row: item.row,
-          seatNumber: item.seatNumber,
-          attendeeName: item.attendeeName,
-          attendeeEmail: item.attendeeEmail,
-        })),
-      },
-    });
-
-    this.logger.log(`Booking ${booking.bookingNumber} refunded`);
-
-    return booking;
   }
 }

@@ -9,10 +9,11 @@ import { KafkaClientModule } from '@app/kafka';
 import { PaymentGatewayFactory } from './gateways/payment-gateway.factory';
 import { RedisModule } from '@app/redis';
 import { RefundService } from './refund.service';
+import { Refund } from './entities/refund.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Payment]),
+    TypeOrmModule.forFeature([Payment, Refund]),
     KafkaClientModule.register('PAYMENT_KAFKA'),
     RedisModule.register(),
   ],
@@ -24,6 +25,6 @@ import { RefundService } from './refund.service';
     IyzicoGateway,
     RefundService,
   ],
-  exports: [PaymentService],
+  exports: [PaymentService, RefundService],
 })
 export class PaymentModule {}
