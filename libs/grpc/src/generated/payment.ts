@@ -52,6 +52,18 @@ export interface GetPaymentsByBookingResponse {
   payments: PaymentInfo[];
 }
 
+export interface RefundPaymentRequest {
+  bookingId: string;
+  idempotencyKey: string;
+  reason: string;
+}
+
+export interface RefundPaymentResponse {
+  success: boolean;
+  refundId: string;
+  failureReason: string;
+}
+
 export const PAYMENT_PACKAGE_NAME = "payment";
 
 function createBaseInitiatePaymentRequest(): InitiatePaymentRequest {
@@ -464,12 +476,132 @@ export const GetPaymentsByBookingResponse: MessageFns<GetPaymentsByBookingRespon
   },
 };
 
+function createBaseRefundPaymentRequest(): RefundPaymentRequest {
+  return { bookingId: "", idempotencyKey: "", reason: "" };
+}
+
+export const RefundPaymentRequest: MessageFns<RefundPaymentRequest> = {
+  encode(message: RefundPaymentRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.bookingId !== "") {
+      writer.uint32(10).string(message.bookingId);
+    }
+    if (message.idempotencyKey !== "") {
+      writer.uint32(18).string(message.idempotencyKey);
+    }
+    if (message.reason !== "") {
+      writer.uint32(26).string(message.reason);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): RefundPaymentRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseRefundPaymentRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.bookingId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.idempotencyKey = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.reason = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+};
+
+function createBaseRefundPaymentResponse(): RefundPaymentResponse {
+  return { success: false, refundId: "", failureReason: "" };
+}
+
+export const RefundPaymentResponse: MessageFns<RefundPaymentResponse> = {
+  encode(message: RefundPaymentResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.success !== false) {
+      writer.uint32(8).bool(message.success);
+    }
+    if (message.refundId !== "") {
+      writer.uint32(18).string(message.refundId);
+    }
+    if (message.failureReason !== "") {
+      writer.uint32(26).string(message.failureReason);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): RefundPaymentResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseRefundPaymentResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.success = reader.bool();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.refundId = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.failureReason = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+};
+
 export interface PaymentServiceClient {
   initiatePayment(request: InitiatePaymentRequest): Observable<InitiatePaymentResponse>;
 
   getPayment(request: GetPaymentRequest): Observable<PaymentInfo>;
 
   getPaymentsBooking(request: GetPaymentsByBookingRequest): Observable<GetPaymentsByBookingResponse>;
+
+  refundPayment(request: RefundPaymentRequest): Observable<RefundPaymentResponse>;
 }
 
 export interface PaymentServiceController {
@@ -482,11 +614,15 @@ export interface PaymentServiceController {
   getPaymentsBooking(
     request: GetPaymentsByBookingRequest,
   ): Promise<GetPaymentsByBookingResponse> | Observable<GetPaymentsByBookingResponse> | GetPaymentsByBookingResponse;
+
+  refundPayment(
+    request: RefundPaymentRequest,
+  ): Promise<RefundPaymentResponse> | Observable<RefundPaymentResponse> | RefundPaymentResponse;
 }
 
 export function PaymentServiceControllerMethods() {
   return function (constructor: Function) {
-    const grpcMethods: string[] = ["initiatePayment", "getPayment", "getPaymentsBooking"];
+    const grpcMethods: string[] = ["initiatePayment", "getPayment", "getPaymentsBooking", "refundPayment"];
     for (const method of grpcMethods) {
       const descriptor: any = Reflect.getOwnPropertyDescriptor(constructor.prototype, method);
       GrpcMethod("PaymentService", method)(constructor.prototype[method], method, descriptor);
@@ -534,12 +670,23 @@ export const PaymentServiceService = {
       Buffer.from(GetPaymentsByBookingResponse.encode(value).finish()),
     responseDeserialize: (value: Buffer): GetPaymentsByBookingResponse => GetPaymentsByBookingResponse.decode(value),
   },
+  refundPayment: {
+    path: "/payment.PaymentService/RefundPayment" as const,
+    requestStream: false as const,
+    responseStream: false as const,
+    requestSerialize: (value: RefundPaymentRequest): Buffer => Buffer.from(RefundPaymentRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer): RefundPaymentRequest => RefundPaymentRequest.decode(value),
+    responseSerialize: (value: RefundPaymentResponse): Buffer =>
+      Buffer.from(RefundPaymentResponse.encode(value).finish()),
+    responseDeserialize: (value: Buffer): RefundPaymentResponse => RefundPaymentResponse.decode(value),
+  },
 } as const;
 
 export interface PaymentServiceServer extends UntypedServiceImplementation {
   initiatePayment: handleUnaryCall<InitiatePaymentRequest, InitiatePaymentResponse>;
   getPayment: handleUnaryCall<GetPaymentRequest, PaymentInfo>;
   getPaymentsBooking: handleUnaryCall<GetPaymentsByBookingRequest, GetPaymentsByBookingResponse>;
+  refundPayment: handleUnaryCall<RefundPaymentRequest, RefundPaymentResponse>;
 }
 
 export interface MessageFns<T> {

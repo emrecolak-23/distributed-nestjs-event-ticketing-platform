@@ -1,12 +1,16 @@
 import { Controller } from '@nestjs/common';
 import { GrpcMethod } from '@nestjs/microservices';
 import { PaymentService } from './payment.service';
-import { PaymentMethod } from './enums';
+import { PaymentMethod, RefundStatus } from './enums';
 import { PaymentProvider } from './gateways/payment-provider.enum';
+import { RefundService } from './refund.service';
 
 @Controller()
 export class PaymentGrpcController {
-  constructor(private readonly paymentService: PaymentService) {}
+  constructor(
+    private readonly paymentService: PaymentService,
+    private readonly refundService: RefundService,
+  ) {}
 
   @GrpcMethod('PaymentService', 'InitiatePayment')
   async initiatePayment(data: {
@@ -65,5 +69,32 @@ export class PaymentGrpcController {
       failureReason: payment.failureReason || '',
       paidAt: payment.paidAt ? payment.paidAt.toISOString() : '',
     };
+  }
+
+  @GrpcMethod('PaymentService', 'RefundPayment')
+  async refundPayment(data: {
+    bookingId: string;
+    idempotencyKey: string;
+    reason?: string;
+  }) {
+    try {
+      const refund = await this.refundService.refundByBooking(
+        data.bookingId,
+        data.idempotencyKey,
+        data.reason,
+      );
+
+      return {
+        success: refund.status === RefundStatus.PROCESSED,
+        refundId: refund.id,
+        failureReason: refund.failureReason || '',
+      };
+    } catch (error) {
+      return {
+        success: false,
+        refundId: '',
+        failureReason: error.message || '',
+      };
+    }
   }
 }

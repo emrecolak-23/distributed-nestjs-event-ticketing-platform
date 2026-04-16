@@ -123,4 +123,14 @@ export class InventoryGrpcController {
       return { success: false };
     }
   }
+
+  @GrpcMethod('SeatInventoryService', 'ReleaseSoldSeats')
+  async releaseSoldSeats(data: { eventId: string; seatIds: string[] }) {
+    try {
+      await this.inventoryService.relaseSoldSeats(data.eventId, data.seatIds);
+      return { success: true };
+    } catch (error) {
+      return { success: false };
+    }
+  }
 }

@@ -10,6 +10,7 @@ service SeatInventoryService {
     rpc HoldSeats (HoldSeatsRequest) returns (HoldSeatsResponse);
     rpc ReleaseSeats (ReleaseSeatsRequest) returns (ReleaseSeatsResponse);
     rpc MarkSeatsAsSold (MarkSeatsAsSoldRequest) returns (MarkSeatsAsSoldResponse);
+    rpc ReleaseSoldSeats (ReleaseSoldSeatsRequest) returns (ReleaseSoldSeatsResponse);
 }
 
 message SeatInfo {
@@ -79,5 +80,15 @@ message MarkSeatsAsSoldRequest {
 }
 
 message MarkSeatsAsSoldResponse {
+    bool success = 1;
+}
+
+message ReleaseSoldSeatsRequest {
+    string event_id = 1;
+    repeated string seat_ids = 2;
+
+}
+
+message ReleaseSoldSeatsResponse {
     bool success = 1;
 }

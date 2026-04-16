@@ -11,6 +11,19 @@ export class TemplateEngine {
   }
 
   private registerTemplates() {
+    // Booking refunded
+
+    this.templates.set('booking_refunded', {
+      subject: 'İade onaylandı — {{bookingNumber}}',
+      body: `Merhaba,
+      
+      Booking {{bookingNumber}} için iade talebiniz onaylandı. {{totalAmount}} {{currency}} tutarı kartınıza 3-5 iş günü içinde geri yansıyacak.
+      
+      Teşekkür ederiz.`,
+      html: `<h2>İade onaylandı</h2>
+      <p>Booking <strong>{{bookingNumber}}</strong> için iade talebiniz onaylandı.</p>
+      <p><strong>{{totalAmount}} {{currency}}</strong> tutarı kartınıza 3-5 iş günü içinde geri yansıyacak.</p>`,
+    });
     // Booking confirmed
     this.templates.set('booking_confirmed', {
       subject: 'Booking onaylandı — {{bookingNumber}}',

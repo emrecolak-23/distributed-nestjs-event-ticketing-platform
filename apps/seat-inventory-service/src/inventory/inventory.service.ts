@@ -74,4 +74,18 @@ export class InventoryService {
   ): Promise<void> {
     await this.repo.update({ eventId, seatId: In(seatIds) }, { status });
   }
+
+  async relaseSoldSeats(eventId: string, seatIds: string[]): Promise<void> {
+    const inventories = await this.findBySeatIds(eventId, seatIds);
+
+    for (const inv of inventories) {
+      inv.status = SeatStatus.AVAILABLE;
+    }
+
+    await this.repo.save(inventories);
+
+    this.logger.log(
+      `Released ${inventories.length} sold seats for event ${eventId}`,
+    );
+  }
 }

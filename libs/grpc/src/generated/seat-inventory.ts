@@ -81,6 +81,15 @@ export interface MarkSeatsAsSoldResponse {
   success: boolean;
 }
 
+export interface ReleaseSoldSeatsRequest {
+  eventId: string;
+  seatIds: string[];
+}
+
+export interface ReleaseSoldSeatsResponse {
+  success: boolean;
+}
+
 export const SEAT_INVENTORY_PACKAGE_NAME = "seat_inventory";
 
 function createBaseSeatInfo(): SeatInfo {
@@ -779,6 +788,91 @@ export const MarkSeatsAsSoldResponse: MessageFns<MarkSeatsAsSoldResponse> = {
   },
 };
 
+function createBaseReleaseSoldSeatsRequest(): ReleaseSoldSeatsRequest {
+  return { eventId: "", seatIds: [] };
+}
+
+export const ReleaseSoldSeatsRequest: MessageFns<ReleaseSoldSeatsRequest> = {
+  encode(message: ReleaseSoldSeatsRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.eventId !== "") {
+      writer.uint32(10).string(message.eventId);
+    }
+    for (const v of message.seatIds) {
+      writer.uint32(18).string(v!);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ReleaseSoldSeatsRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseReleaseSoldSeatsRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.eventId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.seatIds.push(reader.string());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+};
+
+function createBaseReleaseSoldSeatsResponse(): ReleaseSoldSeatsResponse {
+  return { success: false };
+}
+
+export const ReleaseSoldSeatsResponse: MessageFns<ReleaseSoldSeatsResponse> = {
+  encode(message: ReleaseSoldSeatsResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.success !== false) {
+      writer.uint32(8).bool(message.success);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ReleaseSoldSeatsResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseReleaseSoldSeatsResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 8) {
+            break;
+          }
+
+          message.success = reader.bool();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+};
+
 export interface SeatInventoryServiceClient {
   getSeatsByEvent(request: GetSeatsByEventRequest): Observable<GetSeatsByEventResponse>;
 
@@ -791,6 +885,8 @@ export interface SeatInventoryServiceClient {
   releaseSeats(request: ReleaseSeatsRequest): Observable<ReleaseSeatsResponse>;
 
   markSeatsAsSold(request: MarkSeatsAsSoldRequest): Observable<MarkSeatsAsSoldResponse>;
+
+  releaseSoldSeats(request: ReleaseSoldSeatsRequest): Observable<ReleaseSoldSeatsResponse>;
 }
 
 export interface SeatInventoryServiceController {
@@ -815,6 +911,10 @@ export interface SeatInventoryServiceController {
   markSeatsAsSold(
     request: MarkSeatsAsSoldRequest,
   ): Promise<MarkSeatsAsSoldResponse> | Observable<MarkSeatsAsSoldResponse> | MarkSeatsAsSoldResponse;
+
+  releaseSoldSeats(
+    request: ReleaseSoldSeatsRequest,
+  ): Promise<ReleaseSoldSeatsResponse> | Observable<ReleaseSoldSeatsResponse> | ReleaseSoldSeatsResponse;
 }
 
 export function SeatInventoryServiceControllerMethods() {
@@ -826,6 +926,7 @@ export function SeatInventoryServiceControllerMethods() {
       "holdSeats",
       "releaseSeats",
       "markSeatsAsSold",
+      "releaseSoldSeats",
     ];
     for (const method of grpcMethods) {
       const descriptor: any = Reflect.getOwnPropertyDescriptor(constructor.prototype, method);
@@ -904,6 +1005,17 @@ export const SeatInventoryServiceService = {
       Buffer.from(MarkSeatsAsSoldResponse.encode(value).finish()),
     responseDeserialize: (value: Buffer): MarkSeatsAsSoldResponse => MarkSeatsAsSoldResponse.decode(value),
   },
+  releaseSoldSeats: {
+    path: "/seat_inventory.SeatInventoryService/ReleaseSoldSeats" as const,
+    requestStream: false as const,
+    responseStream: false as const,
+    requestSerialize: (value: ReleaseSoldSeatsRequest): Buffer =>
+      Buffer.from(ReleaseSoldSeatsRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer): ReleaseSoldSeatsRequest => ReleaseSoldSeatsRequest.decode(value),
+    responseSerialize: (value: ReleaseSoldSeatsResponse): Buffer =>
+      Buffer.from(ReleaseSoldSeatsResponse.encode(value).finish()),
+    responseDeserialize: (value: Buffer): ReleaseSoldSeatsResponse => ReleaseSoldSeatsResponse.decode(value),
+  },
 } as const;
 
 export interface SeatInventoryServiceServer extends UntypedServiceImplementation {
@@ -913,6 +1025,7 @@ export interface SeatInventoryServiceServer extends UntypedServiceImplementation
   holdSeats: handleUnaryCall<HoldSeatsRequest, HoldSeatsResponse>;
   releaseSeats: handleUnaryCall<ReleaseSeatsRequest, ReleaseSeatsResponse>;
   markSeatsAsSold: handleUnaryCall<MarkSeatsAsSoldRequest, MarkSeatsAsSoldResponse>;
+  releaseSoldSeats: handleUnaryCall<ReleaseSoldSeatsRequest, ReleaseSoldSeatsResponse>;
 }
 
 export interface MessageFns<T> {

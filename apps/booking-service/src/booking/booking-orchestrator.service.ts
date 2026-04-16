@@ -5,6 +5,7 @@ import {
   NotFoundException,
   Inject,
   InternalServerErrorException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Booking } from './entities/booking.entity';
@@ -325,5 +326,82 @@ export class BookingOrchestratorService {
     const timestamp = Date.now().toString(36).toUpperCase();
     const random = randomUUID().slice(0, 4).toUpperCase();
     return `BK-${timestamp}-${random}`;
+  }
+
+  async cancelBooking(
+    bookingId: string,
+    userId: string,
+    refundItempotencyKey: string,
+    reason?: string,
+  ) {
+    const booking = await this.bookingRepo.findOne({
+      where: { id: bookingId },
+      relations: ['items'],
+    });
+
+    if (!booking) {
+      throw new NotFoundException('Booking not found');
+    }
+
+    if (booking.userId !== userId) {
+      throw new BadRequestException(
+        'You are not allowed to cancel this booking',
+      );
+    }
+
+    if (booking.status !== BookingStatus.CONFIRMED) {
+      throw new BadRequestException(
+        'Booking is not confirmed and cannot be cancelled',
+      );
+    }
+
+    const seatIds = booking.items.map((item) => item.seatId);
+
+    const { success, failureReason } = await firstValueFrom(
+      this.paymentService.refundPayment({
+        bookingId: booking.id,
+        idempotencyKey: refundItempotencyKey,
+        reason: reason || 'User cancellation',
+      }),
+    );
+
+    if (!success) {
+      throw new BadRequestException(`Refund failed: ${failureReason}`);
+    }
+
+    await firstValueFrom(
+      this.seatInventoryService.releaseSoldSeats({
+        eventId: booking.eventId,
+        seatIds,
+      }),
+    );
+
+    booking.status = BookingStatus.REFUNDED;
+    booking.cancelledAt = new Date();
+    booking.cancellationReason = reason || 'User cancellation';
+    await this.bookingRepo.save(booking);
+
+    this.kafkaClient.emit('booking.refunded', {
+      key: booking.id,
+      value: {
+        bookingId: booking.id,
+        bookingNumber: booking.bookingNumber,
+        userId: booking.userId,
+        eventId: booking.eventId,
+        totalAmount: booking.totalAmount,
+        currency: booking.currency,
+        items: booking.items.map((item) => ({
+          sectionName: item.sectionName,
+          row: item.row,
+          seatNumber: item.seatNumber,
+          attendeeName: item.attendeeName,
+          attendeeEmail: item.attendeeEmail,
+        })),
+      },
+    });
+
+    this.logger.log(`Booking ${booking.bookingNumber} refunded`);
+
+    return booking;
   }
 }

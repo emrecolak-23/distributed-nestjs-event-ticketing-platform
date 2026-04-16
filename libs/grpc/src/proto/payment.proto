@@ -6,6 +6,7 @@ service PaymentService {
     rpc InitiatePayment (InitiatePaymentRequest) returns (InitiatePaymentResponse);
     rpc GetPayment (GetPaymentRequest) returns (PaymentInfo);
     rpc GetPaymentsBooking (GetPaymentsByBookingRequest) returns (GetPaymentsByBookingResponse);
+    rpc RefundPayment (RefundPaymentRequest) returns (RefundPaymentResponse);
 }
 
 message InitiatePaymentRequest {
@@ -47,4 +48,16 @@ message GetPaymentsByBookingRequest {
 
 message GetPaymentsByBookingResponse {
     repeated PaymentInfo payments = 1;
+}
+
+message RefundPaymentRequest {
+    string booking_id = 1;
+    string idempotency_key = 2;
+    string reason = 3;
+}
+
+message RefundPaymentResponse {
+    bool success = 1;
+    string refund_id = 2;
+    string failure_reason = 3;
 }

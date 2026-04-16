@@ -8,6 +8,7 @@ import { IyzicoGateway } from './gateways/iyzico.gateway';
 import { KafkaClientModule } from '@app/kafka';
 import { PaymentGatewayFactory } from './gateways/payment-gateway.factory';
 import { RedisModule } from '@app/redis';
+import { RefundService } from './refund.service';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { RedisModule } from '@app/redis';
     PaymentGatewayFactory,
     StripeGateway,
     IyzicoGateway,
+    RefundService,
   ],
   exports: [PaymentService],
 })

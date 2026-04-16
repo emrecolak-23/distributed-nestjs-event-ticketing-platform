@@ -58,4 +58,26 @@ export class BookingConsumer {
       },
     });
   }
+
+  @EventPattern('booking.refunded')
+  async handleBookingRefunded(@Payload() payload: any) {
+    const data = payload.value;
+    this.logger.log(`Sending refund emails for booking ${data.bookingNumber}`);
+
+    const primaryEmail = data.items?.[0]?.attendeeEmail;
+    if (!primaryEmail) return;
+
+    await this.notificationService.send({
+      userId: data.userId,
+      channel: NotificationChannel.EMAIL,
+      type: 'booking_refunded',
+      templateId: 'booking_refunded',
+      recipient: primaryEmail,
+      payload: {
+        bookingNumber: data.bookingNumber,
+        totalAmount: data.totalAmount,
+        currency: data.currency,
+      },
+    });
+  }
 }
