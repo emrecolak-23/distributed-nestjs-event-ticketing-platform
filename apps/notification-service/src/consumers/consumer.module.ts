@@ -4,6 +4,6 @@ import { NotificationModule } from '../notification/notification.module';
 
 @Module({
   imports: [NotificationModule],
-  providers: [BookingConsumer],
+  controllers: [BookingConsumer],
 })
 export class ConsumerModule {}

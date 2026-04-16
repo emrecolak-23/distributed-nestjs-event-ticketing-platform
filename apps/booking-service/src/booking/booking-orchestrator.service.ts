@@ -134,20 +134,6 @@ export class BookingOrchestratorService {
         savedBooking.confirmedAt = new Date();
         savedBooking.status = BookingStatus.CONFIRMED;
         await this.bookingRepo.save(savedBooking);
-      } else {
-        savedBooking.status = BookingStatus.CANCELLED;
-        savedBooking.cancelledAt = new Date();
-        savedBooking.cancellationReason =
-          payment.failureReason || 'Payment failed';
-        await this.bookingRepo.save(savedBooking);
-        await firstValueFrom(
-          this.seatInventoryService.releaseSeats({
-            eventId: dto.eventId,
-            seatIds,
-            userId: dto.userId,
-            reason: 'payment_failed',
-          }),
-        );
 
         const bookingWithItems = await this.bookingRepo.findOne({
           where: { id: savedBooking.id },
@@ -180,6 +166,22 @@ export class BookingOrchestratorService {
             })),
           },
         });
+      } else {
+        savedBooking.status = BookingStatus.CANCELLED;
+        savedBooking.cancelledAt = new Date();
+        savedBooking.cancellationReason =
+          payment.failureReason || 'Payment failed';
+        await this.bookingRepo.save(savedBooking);
+        await firstValueFrom(
+          this.seatInventoryService.releaseSeats({
+            eventId: dto.eventId,
+            seatIds,
+            userId: dto.userId,
+            reason: 'payment_failed',
+          }),
+        );
+
+        this.logger.log(`Emitting booking.confirmed for ${savedBooking.id}`);
       }
 
       this.logger.log(

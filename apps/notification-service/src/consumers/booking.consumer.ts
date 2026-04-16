@@ -11,7 +11,7 @@ export class BookingConsumer {
 
   @EventPattern('booking.confirmed')
   async handleBookingConfirmed(@Payload() payload: any) {
-    const data = payload.value;
+    const data = payload?.value ?? payload;
 
     this.logger.log(`Received booking confirmed event: ${data.bookingId}`);
 
@@ -30,7 +30,7 @@ export class BookingConsumer {
           eventTitle: data.eventTitle,
           totalAmount: data.totalAmount,
           currency: data.currency,
-          seats: data.item,
+          seats: data.items,
         },
       });
     }
@@ -38,7 +38,7 @@ export class BookingConsumer {
 
   @EventPattern('booking.cancelled')
   async handleBookingCancelled(@Payload() payload: any) {
-    const data = payload.value;
+    const data = payload?.value ?? payload;
 
     this.logger.log(`Received booking cancelled event: ${data.bookingId}`);
 
