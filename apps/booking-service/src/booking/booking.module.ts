@@ -5,6 +5,7 @@ import { Booking } from './entities/booking.entity';
 import { BookingItem } from './entities/booking-item.entity';
 import { BookingController } from './booking.controller';
 import { BookingOrchestratorService } from './booking-orchestrator.service';
+import { KafkaClientModule } from '@app/kafka';
 import {
   PAYMENT_PACKAGE,
   paymentGrpcOptions,
@@ -15,7 +16,7 @@ import {
 @Module({
   imports: [
     TypeOrmModule.forFeature([Booking, BookingItem]),
-
+    KafkaClientModule.register('BOOKING_KAFKA'),
     ClientsModule.register([
       {
         name: SEAT_INVENTORY_PACKAGE,

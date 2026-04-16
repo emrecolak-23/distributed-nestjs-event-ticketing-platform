@@ -18,6 +18,7 @@ import type { ClientGrpc } from '@nestjs/microservices';
 import { firstValueFrom } from 'rxjs';
 import { SeatInventoryServiceClient } from '@app/grpc/generated/seat-inventory';
 import { PaymentServiceClient } from '@app/grpc/generated/payment';
+import { ClientKafka } from '@nestjs/microservices';
 
 @Injectable()
 export class BookingOrchestratorService {
@@ -32,6 +33,7 @@ export class BookingOrchestratorService {
     private readonly dataSource: DataSource,
     @Inject(SEAT_INVENTORY_PACKAGE) private readonly grpcClient: ClientGrpc,
     @Inject(PAYMENT_PACKAGE) private readonly paymentClient: ClientGrpc,
+    @Inject('BOOKING_KAFKA') private readonly kafkaClient: ClientKafka,
   ) {}
 
   onModuleInit() {
@@ -43,6 +45,7 @@ export class BookingOrchestratorService {
     this.paymentService =
       this.paymentClient.getService<PaymentServiceClient>('PaymentService');
 
+    this.kafkaClient.connect();
     this.logger.log('gRPC services initialized');
   }
 
@@ -137,7 +140,6 @@ export class BookingOrchestratorService {
         savedBooking.cancellationReason =
           payment.failureReason || 'Payment failed';
         await this.bookingRepo.save(savedBooking);
-
         await firstValueFrom(
           this.seatInventoryService.releaseSeats({
             eventId: dto.eventId,
@@ -146,6 +148,38 @@ export class BookingOrchestratorService {
             reason: 'payment_failed',
           }),
         );
+
+        const bookingWithItems = await this.bookingRepo.findOne({
+          where: { id: savedBooking.id },
+          relations: ['items'],
+        });
+
+        if (!bookingWithItems) {
+          throw new InternalServerErrorException(
+            'Booking not found after payment failure',
+          );
+        }
+
+        this.kafkaClient.emit('booking.confirmed', {
+          key: savedBooking.id,
+          value: {
+            bookingId: savedBooking.id,
+            bookingNumber: savedBooking.bookingNumber,
+            userId: savedBooking.userId,
+            eventId: savedBooking.eventId,
+            totalAmount: savedBooking.totalAmount,
+            currency: savedBooking.currency,
+            status: savedBooking.status,
+            items: bookingWithItems.items.map((item) => ({
+              seatId: item.seatId,
+              sectionName: item.sectionName,
+              row: item.row,
+              seatNumber: item.seatNumber,
+              attendeeName: item.attendeeName,
+              attendeeEmail: item.attendeeEmail,
+            })),
+          },
+        });
       }
 
       this.logger.log(
@@ -157,6 +191,38 @@ export class BookingOrchestratorService {
       savedBooking.cancelledAt = new Date();
       savedBooking.cancellationReason = `Payment error: ${error.message}`;
       await this.bookingRepo.save(savedBooking);
+
+      const bookingWithItems = await this.bookingRepo.findOne({
+        where: { id: savedBooking.id },
+        relations: ['items'],
+      });
+
+      if (!bookingWithItems) {
+        throw new InternalServerErrorException(
+          'Booking not found after cancellation',
+        );
+      }
+
+      this.kafkaClient.emit('booking.cancelled', {
+        key: savedBooking.id,
+        value: {
+          bookingId: savedBooking.id,
+          bookingNumber: savedBooking.bookingNumber,
+          userId: savedBooking.userId,
+          eventId: savedBooking.eventId,
+          totalAmount: savedBooking.totalAmount,
+          currency: savedBooking.currency,
+          status: savedBooking.status,
+          items: bookingWithItems.items.map((item) => ({
+            seatId: item.seatId,
+            sectionName: item.sectionName,
+            row: item.row,
+            seatNumber: item.seatNumber,
+            attendeeName: item.attendeeName,
+            attendeeEmail: item.attendeeEmail,
+          })),
+        },
+      });
 
       throw new BadRequestException(`Payment failed: ${error.message}`);
     }
