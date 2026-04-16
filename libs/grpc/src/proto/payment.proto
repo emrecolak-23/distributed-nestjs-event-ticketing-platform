@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package payment;
+
+service PaymentService {
+    rpc InitiatePayment (InitiatePaymentRequest) returns (InitiatePaymentResponse);
+    rpc GetPayment (GetPaymentRequest) returns (PaymentInfo);
+    rpc GetPaymentsBooking (GetPaymentsByBookingRequest) returns (GetPaymentsByBookingResponse);
+}
+
+message InitiatePaymentRequest {
+    string booking_id = 1;
+    string idempotency_key = 2;
+    double amount = 3;
+    string currency = 4;
+    string method = 5;
+    string card_token = 6;
+    string provider = 7;
+}
+
+
+message PaymentInfo {
+    string id = 1;
+    string booking_id = 2;
+    string idempotency_key = 3;
+    string amount = 4;
+    string currency = 5;
+    string method = 6;
+    string status = 7;
+    string provider = 8;
+    string provider_tx_id = 9;
+    string failure_reason = 10;
+    string paid_at = 11;   
+}
+
+message InitiatePaymentResponse {
+    PaymentInfo payment = 1;
+}
+
+message GetPaymentRequest {
+    string id = 1;
+  }
+
+message GetPaymentsByBookingRequest {
+    string booking_id = 1;
+}
+
+message GetPaymentsByBookingResponse {
+    repeated PaymentInfo payments = 1;
+}

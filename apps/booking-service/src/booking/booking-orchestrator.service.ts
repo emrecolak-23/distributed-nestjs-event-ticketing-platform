@@ -4,6 +4,7 @@ import {
   BadRequestException,
   NotFoundException,
   Inject,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Booking } from './entities/booking.entity';
@@ -12,34 +13,25 @@ import { CreateBookingDto } from './dtos/create-booking.dto';
 import { randomUUID } from 'crypto';
 import { BookingStatus } from './enums';
 import { BookingItem } from './entities/booking-item.entity';
-import { SEAT_INVENTORY_PACKAGE } from '@app/grpc';
+import { PAYMENT_PACKAGE, SEAT_INVENTORY_PACKAGE } from '@app/grpc';
 import type { ClientGrpc } from '@nestjs/microservices';
 import { firstValueFrom } from 'rxjs';
 import { SeatInventoryServiceClient } from '@app/grpc/generated/seat-inventory';
-
-interface SeatInventoryGrpcService {
-  getSeatsByEvent(data: { eventId: string }): any;
-  getAvailableSeats(data: { eventId: string }): any;
-  verifyHold(data: { eventId: string; seatIds: string[]; userId: string }): any;
-  holdSeats(data: {
-    eventId: string;
-    seatIds: string[];
-    userId: string;
-    sessionId: string;
-  }): any;
-}
+import { PaymentServiceClient } from '@app/grpc/generated/payment';
 
 @Injectable()
 export class BookingOrchestratorService {
   private readonly logger = new Logger(BookingOrchestratorService.name);
   private readonly BOOKING_EXPIRY_MS = 10 * 60 * 1000;
   private seatInventoryService: SeatInventoryServiceClient;
+  private paymentService: PaymentServiceClient;
 
   constructor(
     @InjectRepository(Booking)
     private readonly bookingRepo: Repository<Booking>,
     private readonly dataSource: DataSource,
     @Inject(SEAT_INVENTORY_PACKAGE) private readonly grpcClient: ClientGrpc,
+    @Inject(PAYMENT_PACKAGE) private readonly paymentClient: ClientGrpc,
   ) {}
 
   onModuleInit() {
@@ -47,6 +39,11 @@ export class BookingOrchestratorService {
       this.grpcClient.getService<SeatInventoryServiceClient>(
         'SeatInventoryService',
       );
+
+    this.paymentService =
+      this.paymentClient.getService<PaymentServiceClient>('PaymentService');
+
+    this.logger.log('gRPC services initialized');
   }
 
   async createBooking(dto: CreateBookingDto) {
@@ -95,6 +92,79 @@ export class BookingOrchestratorService {
       0,
     );
 
+    const savedBooking = await this.persistBooking(
+      dto,
+      selectedSeats,
+      totalAmount,
+    );
+    if (!savedBooking) {
+      throw new InternalServerErrorException(
+        'Booking could not be loaded after persistence',
+      );
+    }
+
+    try {
+      const { payment } = await firstValueFrom(
+        this.paymentService.initiatePayment({
+          bookingId: savedBooking.id,
+          idempotencyKey: dto.paymentIdempotencyKey,
+          amount: totalAmount,
+          currency: selectedSeats[0].currency,
+          method: 'credit_card',
+          cardToken: dto.cardToken,
+          provider: dto.paymentProvider ?? '',
+        }),
+      );
+
+      if (!payment) {
+        throw new InternalServerErrorException('Payment initiation failed');
+      }
+
+      if (payment.status === 'succeeded') {
+        savedBooking.status = BookingStatus.CONFIRMED;
+        savedBooking.confirmedAt = new Date();
+        await this.bookingRepo.save(savedBooking);
+      } else {
+        savedBooking.status = BookingStatus.CANCELLED;
+        savedBooking.cancelledAt = new Date();
+        savedBooking.cancellationReason =
+          payment.failureReason || 'Payment failed';
+        await this.bookingRepo.save(savedBooking);
+
+        await firstValueFrom(
+          this.seatInventoryService.releaseSeats({
+            eventId: dto.eventId,
+            seatIds,
+            userId: dto.userId,
+            reason: 'payment_failed',
+          }),
+        );
+      }
+
+      this.logger.log(
+        `Payment triggered for booking ${savedBooking.bookingNumber}: ${payment.status}`,
+      );
+    } catch (error) {
+      this.logger.error(`Payment failed: ${error.message}`);
+      savedBooking.status = BookingStatus.CANCELLED;
+      savedBooking.cancelledAt = new Date();
+      savedBooking.cancellationReason = `Payment error: ${error.message}`;
+      await this.bookingRepo.save(savedBooking);
+
+      throw new BadRequestException(`Payment failed: ${error.message}`);
+    }
+
+    return this.bookingRepo.findOne({
+      where: { id: savedBooking.id },
+      relations: ['items'],
+    });
+  }
+
+  private async persistBooking(
+    dto: CreateBookingDto,
+    selectedSeats: any[],
+    totalAmount: number,
+  ) {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();

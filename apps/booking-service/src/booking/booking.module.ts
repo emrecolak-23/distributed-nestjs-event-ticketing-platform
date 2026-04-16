@@ -5,7 +5,12 @@ import { Booking } from './entities/booking.entity';
 import { BookingItem } from './entities/booking-item.entity';
 import { BookingController } from './booking.controller';
 import { BookingOrchestratorService } from './booking-orchestrator.service';
-import { SEAT_INVENTORY_PACKAGE, seatInventoryGrpcOptions } from '@app/grpc';
+import {
+  PAYMENT_PACKAGE,
+  paymentGrpcOptions,
+  SEAT_INVENTORY_PACKAGE,
+  seatInventoryGrpcOptions,
+} from '@app/grpc';
 
 @Module({
   imports: [
@@ -18,6 +23,14 @@ import { SEAT_INVENTORY_PACKAGE, seatInventoryGrpcOptions } from '@app/grpc';
         options: {
           ...seatInventoryGrpcOptions,
           url: process.env.SEAT_INVENTORY_GRPC_URL || 'localhost:5001',
+        },
+      },
+      {
+        name: PAYMENT_PACKAGE,
+        transport: Transport.GRPC,
+        options: {
+          ...paymentGrpcOptions,
+          url: process.env.PAYMENT_GRPC_URL || 'localhost:5002',
         },
       },
     ]),

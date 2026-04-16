@@ -30,6 +30,16 @@ export class CreateBookingDto {
   @IsString()
   sessionId: string;
 
+  @IsString()
+  cardToken: string;
+
+  @IsString()
+  paymentIdempotencyKey: string;
+
+  @IsString()
+  @IsOptional()
+  paymentProvider?: string;
+
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
