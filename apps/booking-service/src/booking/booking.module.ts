@@ -16,6 +16,7 @@ import { Outbox } from './entities/outbox.entity';
 import { OutboxWorker } from './outbox.worker';
 import { RefundRecoveryWorker } from './refund-recovery.worker';
 import { ScheduleModule } from '@nestjs/schedule';
+import { TicketModule } from '../ticket/ticket.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { ScheduleModule } from '@nestjs/schedule';
       },
     ]),
     ScheduleModule.forRoot(),
+    TicketModule,
   ],
   controllers: [BookingController],
   providers: [BookingOrchestratorService, OutboxWorker, RefundRecoveryWorker],

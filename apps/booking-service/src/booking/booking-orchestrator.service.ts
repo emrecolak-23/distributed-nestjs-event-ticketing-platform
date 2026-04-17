@@ -5,7 +5,6 @@ import {
   NotFoundException,
   Inject,
   InternalServerErrorException,
-  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Booking } from './entities/booking.entity';
@@ -21,6 +20,7 @@ import { SeatInventoryServiceClient } from '@app/grpc/generated/seat-inventory';
 import { PaymentServiceClient } from '@app/grpc/generated/payment';
 import { ClientKafka } from '@nestjs/microservices';
 import { Outbox } from './entities/outbox.entity';
+import { TicketService } from '../ticket/ticket.service';
 
 @Injectable()
 export class BookingOrchestratorService {
@@ -37,6 +37,7 @@ export class BookingOrchestratorService {
     @Inject(SEAT_INVENTORY_PACKAGE) private readonly grpcClient: ClientGrpc,
     @Inject(PAYMENT_PACKAGE) private readonly paymentClient: ClientGrpc,
     @Inject('BOOKING_KAFKA') private readonly kafkaClient: ClientKafka,
+    private readonly ticketService: TicketService,
   ) {}
 
   onModuleInit() {
@@ -288,6 +289,7 @@ export class BookingOrchestratorService {
             await queryRunner.startTransaction();
 
             try {
+              await this.ticketService.cancelByBooking(booking.id);
               booking.status = BookingStatus.REFUNDED;
               booking.cancelledAt = new Date();
               booking.refundState = RefundState.COMPLETED;

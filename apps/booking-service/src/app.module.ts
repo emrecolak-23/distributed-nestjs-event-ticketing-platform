@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 
 import { PostgresDatabaseModule } from '@app/database';
 import { BookingModule } from './booking/booking.module';
+import { TicketModule } from './ticket/ticket.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { BookingModule } from './booking/booking.module';
     }),
     PostgresDatabaseModule,
     BookingModule,
+    TicketModule,
   ],
   controllers: [],
   providers: [],

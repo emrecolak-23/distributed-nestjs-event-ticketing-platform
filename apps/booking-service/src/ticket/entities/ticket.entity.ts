@@ -14,6 +14,13 @@ export class Ticket {
   id: string;
 
   @Column()
+  @Index()
+  bookingId: string;
+
+  @Column()
+  seatId: string;
+
+  @Column()
   bookingItemId: string;
 
   @Column()
@@ -28,6 +35,21 @@ export class Ticket {
     default: TicketStatus.ACTIVE,
   })
   status: TicketStatus;
+
+  @Column()
+  sectionName: string;
+
+  @Column()
+  row: string;
+
+  @Column()
+  seatNumber: string;
+
+  @Column({ type: 'varchar', nullable: true })
+  attendeeName: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  attendeeEmail: string | null;
 
   @Column({ nullable: true })
   checkedInAt: Date;

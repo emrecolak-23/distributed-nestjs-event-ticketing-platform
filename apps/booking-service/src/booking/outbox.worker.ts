@@ -8,6 +8,7 @@ import { Outbox } from './entities/outbox.entity';
 import { OutboxStatus } from './enums';
 import { SeatInventoryServiceClient } from '@app/grpc/generated/seat-inventory';
 import { SEAT_INVENTORY_PACKAGE } from '@app/grpc';
+import { TicketService } from '../ticket/ticket.service';
 
 @Injectable()
 export class OutboxWorker implements OnModuleInit {
@@ -18,6 +19,7 @@ export class OutboxWorker implements OnModuleInit {
     @InjectRepository(Outbox) private readonly outboxRepo: Repository<Outbox>,
     @Inject(SEAT_INVENTORY_PACKAGE) private readonly grpcClient: ClientGrpc,
     @Inject('BOOKING_KAFKA') private readonly kafkaClient: ClientKafka,
+    private readonly ticketService: TicketService,
   ) {}
 
   onModuleInit() {
@@ -107,6 +109,7 @@ export class OutboxWorker implements OnModuleInit {
   }
 
   private async handleBookingConfirmed(entry: Outbox) {
+    await this.ticketService.generateTicket(entry.aggregateId);
     this.kafkaClient.emit('booking.confirmed', {
       key: entry.aggregateId,
       value: entry.payload,
