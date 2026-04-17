@@ -9,7 +9,7 @@ import { GrpcServerModule } from './grpc/grpc-server.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: 'apps/payment-service/.env',
+      envFilePath: ['apps/payment-service/.env', '.env.shared'],
     }),
     PostgresDatabaseModule,
     PaymentModule,

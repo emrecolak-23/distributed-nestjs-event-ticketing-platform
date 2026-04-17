@@ -8,7 +8,7 @@ import { ConsumerModule } from './consumers/consumer.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: 'apps/notification-service/.env',
+      envFilePath: ['apps/notification-service/.env', '.env.shared'],
     }),
     PostgresDatabaseModule,
     NotificationModule,

@@ -71,6 +71,9 @@ importers:
       joi:
         specifier: ^18.1.2
         version: 18.1.2
+      jsonwebtoken:
+        specifier: ^9.0.3
+        version: 9.0.3
       kafkajs:
         specifier: ^2.2.4
         version: 2.2.4
@@ -135,6 +138,9 @@ importers:
       '@types/jest':
         specifier: ^30.0.0
         version: 30.0.0
+      '@types/jsonwebtoken':
+        specifier: ^9.0.10
+        version: 9.0.10
       '@types/node':
         specifier: ^22.10.7
         version: 22.19.17

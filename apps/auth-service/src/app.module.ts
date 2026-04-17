@@ -9,7 +9,7 @@ import { UserModule } from './user/user.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: 'apps/auth-service/.env',
+      envFilePath: ['apps/auth-service/.env', '.env.shared'],
     }),
     PostgresDatabaseModule,
     AuthModule,
