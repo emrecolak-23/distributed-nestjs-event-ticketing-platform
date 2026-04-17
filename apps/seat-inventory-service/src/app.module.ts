@@ -7,7 +7,7 @@ import { RedisModule } from '@app/redis';
 import { GrpcServerModule } from './grpc/grpc-server.module';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtAuthGuard } from '@app/auth-guard';
-
+import { CqrsReadModule } from './cqrs/cqrs-read.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -19,6 +19,7 @@ import { JwtAuthGuard } from '@app/auth-guard';
     InventoryModule,
     HoldModule,
     GrpcServerModule,
+    CqrsReadModule,
   ],
   providers: [
     {

@@ -4,6 +4,7 @@ import { SeatInventory } from './entities/inventory.entity';
 import { In, Repository } from 'typeorm';
 import { EventCreateMessage } from '@app/common';
 import { SeatStatus } from './enums';
+import { AvailabilityReadService } from '../cqrs/availability-read.service';
 
 @Injectable()
 export class InventoryService {
@@ -12,6 +13,7 @@ export class InventoryService {
   constructor(
     @InjectRepository(SeatInventory)
     private readonly repo: Repository<SeatInventory>,
+    private readonly readService: AvailabilityReadService,
   ) {}
 
   async createFromEvent(payload: EventCreateMessage): Promise<void> {
@@ -73,6 +75,15 @@ export class InventoryService {
     status: SeatStatus,
   ): Promise<void> {
     await this.repo.update({ eventId, seatId: In(seatIds) }, { status });
+
+    await this.readService.updateMultipleSeatsStatus(
+      eventId,
+
+      seatIds.map((seatId) => ({
+        seatId,
+        status,
+      })),
+    );
   }
 
   async relaseSoldSeats(eventId: string, seatIds: string[]): Promise<void> {
@@ -83,6 +94,14 @@ export class InventoryService {
     }
 
     await this.repo.save(inventories);
+
+    await this.readService.updateMultipleSeatsStatus(
+      eventId,
+      seatIds.map((seatId) => ({
+        seatId,
+        status: SeatStatus.AVAILABLE,
+      })),
+    );
 
     this.logger.log(
       `Released ${inventories.length} sold seats for event ${eventId}`,

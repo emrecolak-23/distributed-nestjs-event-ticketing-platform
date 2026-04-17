@@ -6,12 +6,14 @@ import { HoldController } from './hold.controller';
 import { HoldService } from './hold.service';
 import { SeatHold } from './entitites/seat-hold.entity';
 import { HoldExpiryWorker } from './hold-expiry.worker';
+import { CqrsReadModule } from '../cqrs/cqrs-read.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([SeatHold]),
     InventoryModule,
     ScheduleModule.forRoot(),
+    CqrsReadModule,
   ],
   controllers: [HoldController],
   providers: [HoldService, HoldExpiryWorker],

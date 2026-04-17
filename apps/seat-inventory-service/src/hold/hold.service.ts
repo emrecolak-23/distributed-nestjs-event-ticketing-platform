@@ -7,6 +7,7 @@ import { InventoryService } from '../inventory/inventory.service';
 import { SeatStatus } from '../inventory/enums';
 import { SeatLockService } from '../inventory/seat-lock.service';
 import { SeatLockInfoResponse } from '../inventory/interfaces';
+import { AvailabilityReadService } from '../cqrs/availability-read.service';
 
 @Injectable()
 export class HoldService {
@@ -18,6 +19,7 @@ export class HoldService {
     private readonly seatLockService: SeatLockService,
     private readonly inventoryService: InventoryService,
     private readonly dataSource: DataSource,
+    private readonly readService: AvailabilityReadService,
   ) {}
 
   async holdSeats(
@@ -86,6 +88,14 @@ export class HoldService {
       const savedHolds = await queryRunner.manager.save(SeatHold, holds);
       await queryRunner.commitTransaction();
 
+      await this.readService.updateMultipleSeatsStatus(
+        eventId,
+        seatIds.map((seatId) => ({
+          seatId,
+          status: SeatStatus.HELD,
+        })),
+      );
+
       this.logger.log(
         `Held ${seatIds.length} seats for user ${userId}, expires at ${expiresAt.toISOString()}`,
       );
@@ -139,6 +149,14 @@ export class HoldService {
 
       await this.seatLockService.releaseSeats(eventId, seatIds, userId);
 
+      await this.readService.updateMultipleSeatsStatus(
+        eventId,
+        seatIds.map((seatId) => ({
+          seatId,
+          status: SeatStatus.AVAILABLE,
+        })),
+      );
+
       this.logger.log(`Released ${seatIds.length} seats, reason: ${reason}`);
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -190,6 +208,14 @@ export class HoldService {
       await queryRunner.manager.save(SeatHold, holds);
       await queryRunner.commitTransaction();
       await this.seatLockService.releaseSeats(eventId, seatIds, userId);
+
+      await this.readService.updateMultipleSeatsStatus(
+        eventId,
+        seatIds.map((seatId) => ({
+          seatId,
+          status: SeatStatus.SOLD,
+        })),
+      );
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
