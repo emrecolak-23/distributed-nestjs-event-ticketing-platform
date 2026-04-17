@@ -72,6 +72,7 @@ export class PaymentService implements OnModuleInit {
         savedPayment.status = PaymentStatus.SUCCEEDED;
         savedPayment.providerTxId = response.providerTxId!;
         savedPayment.paidAt = new Date();
+        await this.paymentRepo.save(savedPayment);
 
         this.kafkaClient.emit('payment.succeded', {
           key: savedPayment.id.toString(),

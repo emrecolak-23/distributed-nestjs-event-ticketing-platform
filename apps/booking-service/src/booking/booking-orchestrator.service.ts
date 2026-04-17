@@ -236,14 +236,10 @@ export class BookingOrchestratorService {
       await this.bookingRepo.save(booking);
     }
 
-    await this.processRefundStateMachine(booking);
-
-    this.logger.log(`Booking ${booking.bookingNumber} refunded`);
-
-    return booking;
+    return await this.processRefundStateMachine(booking);
   }
 
-  private async processRefundStateMachine(booking: Booking): Promise<Booking> {
+  async processRefundStateMachine(booking: Booking): Promise<Booking> {
     const seatIds = booking.items.map((item) => item.seatId);
     const maxSteps = 5;
 
