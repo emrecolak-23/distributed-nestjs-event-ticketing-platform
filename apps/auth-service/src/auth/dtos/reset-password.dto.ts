@@ -1,9 +1,18 @@
 import { IsString, MinLength, Matches } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class ResetPasswordDto {
+  @ApiProperty({
+    description: 'The token for resetting the password',
+    example: 'reset_token',
+  })
   @IsString()
   token: string;
 
+  @ApiProperty({
+    description: 'The new password of the user',
+    example: 'Password123!',
+  })
   @IsString()
   @MinLength(8)
   @Matches(
