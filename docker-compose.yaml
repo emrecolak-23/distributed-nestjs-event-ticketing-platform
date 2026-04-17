@@ -1,23 +1,42 @@
 services:
+  # ─── Infrastructure ───────────────────────────
   postgres:
-    image: postgres:16
-    ports: ["5432:5432"]
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
     environment:
       POSTGRES_USER: ticketing
       POSTGRES_PASSWORD: secret
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./scripts/init-dbs.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ticketing"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   mongodb:
     image: mongo:7
-    ports: ["27017:27017"]
+    ports:
+      - "27017:27017"
     volumes:
       - mongodata:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.0
@@ -26,19 +45,208 @@ services:
 
   kafka:
     image: confluentinc/cp-kafka:7.6.0
-    depends_on: [zookeeper]
-    ports: ["9092:9092"]
+    depends_on:
+      zookeeper:
+        condition: service_started
+    ports:
+      - "9092:9092"
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   mailhog:
     image: mailhog/mailhog
     ports:
-      - "1025:1025"   # SMTP
-      - "8025:8025"   # Web UI
+      - "1025:1025"
+      - "8025:8025"
+
+  # ─── Services ─────────────────────────────────
+  auth-service:
+    build:
+      context: .
+      args:
+        SERVICE: auth-service
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.shared
+    environment:
+      PORT: 3000
+      DB_NAME: auth_db
+      DB_HOST: postgres
+      REDIS_HOST: redis
+      KAFKA_BROKER: kafka:29092
+      JWT_ACCESS_EXPIRY: 15m
+      REFRESH_TOKEN_EXPIRY_DAYS: 30
+      APP_URL: http://localhost:8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  event-service:
+    build:
+      context: .
+      args:
+        SERVICE: event-service
+    ports:
+      - "3001:3001"
+    env_file:
+      - .env.shared
+    environment:
+      PORT: 3001
+      MONGO_URI: mongodb://mongodb:27017/event_db
+      KAFKA_BROKER: kafka:29092
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  seat-inventory-service:
+    build:
+      context: .
+      args:
+        SERVICE: seat-inventory-service
+    ports:
+      - "3002:3002"
+      - "5001:5001"
+    env_file:
+      - .env.shared
+    environment:
+      PORT: 3002
+      DB_NAME: seat_inventory_db
+      DB_HOST: postgres
+      REDIS_HOST: redis
+      KAFKA_BROKER: kafka:29092
+      GRPC_URL: 0.0.0.0:5001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  booking-service:
+    build:
+      context: .
+      args:
+        SERVICE: booking-service
+    ports:
+      - "3003:3003"
+    env_file:
+      - .env.shared
+    environment:
+      PORT: 3003
+      DB_NAME: booking_db
+      DB_HOST: postgres
+      REDIS_HOST: redis
+      KAFKA_BROKER: kafka:29092
+      SEAT_INVENTORY_GRPC_URL: seat-inventory-service:5001
+      PAYMENT_GRPC_URL: payment-service:5002
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      seat-inventory-service:
+        condition: service_started
+      payment-service:
+        condition: service_started
+
+  payment-service:
+    build:
+      context: .
+      args:
+        SERVICE: payment-service
+    ports:
+      - "3004:3004"
+      - "5002:5002"
+    env_file:
+      - .env.shared
+    environment:
+      PORT: 3004
+      DB_NAME: payment_db
+      DB_HOST: postgres
+      REDIS_HOST: redis
+      KAFKA_BROKER: kafka:29092
+      PAYMENT_PROVIDER: stripe
+      GRPC_URL: 0.0.0.0:5002
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  notification-service:
+    build:
+      context: .
+      args:
+        SERVICE: notification-service
+    ports:
+      - "3005:3005"
+    env_file:
+      - .env.shared
+    environment:
+      PORT: 3005
+      DB_NAME: notification_db
+      DB_HOST: postgres
+      KAFKA_BROKER: kafka:29092
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
+      EMAIL_FROM: noreply@ticketing.local
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      mailhog:
+        condition: service_started
+
+  api-gateway:
+    build:
+      context: .
+      args:
+        SERVICE: api-gateway
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env.shared
+    environment:
+      PORT: 8080
+      REDIS_HOST: redis
+      AUTH_SERVICE_URL: http://auth-service:3000
+      EVENT_SERVICE_URL: http://event-service:3001
+      SEAT_INVENTORY_URL: http://seat-inventory-service:3002
+      BOOKING_SERVICE_URL: http://booking-service:3003
+      PAYMENT_SERVICE_URL: http://payment-service:3004
+    depends_on:
+      redis:
+        condition: service_healthy
+      auth-service:
+        condition: service_started
+      event-service:
+        condition: service_started
+      booking-service:
+        condition: service_started
+
 volumes:
   pgdata:
   mongodata:
