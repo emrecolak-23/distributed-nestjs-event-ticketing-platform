@@ -9,12 +9,14 @@ import { AuthService } from './auth.service';
 import { RefreshToken } from '../user/entities/refresh-token.entity';
 import { UserModule } from '../user/user.module';
 import { JwtStrategy } from './strategies';
+import { KafkaClientModule } from '@app/kafka';
 
 @Module({
   imports: [
     UserModule,
     PassportModule,
     TypeOrmModule.forFeature([RefreshToken]),
+    KafkaClientModule.register('AUTH_KAFKA'),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({

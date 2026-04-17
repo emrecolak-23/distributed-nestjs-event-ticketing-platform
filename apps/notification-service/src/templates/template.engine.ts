@@ -11,7 +11,37 @@ export class TemplateEngine {
   }
 
   private registerTemplates() {
-    // Booking refunded
+    this.templates.set('email_verification', {
+      subject: 'Email adresinizi doğrulayın',
+      body: `Merhaba {{fullName}},
+    
+    Hesabınızı aktifleştirmek için aşağıdaki bağlantıya tıklayın:
+    
+    {{verificationUrl}}
+    
+    Bu bağlantı 24 saat geçerlidir.`,
+      html: `<h2>Email doğrulama</h2>
+    <p>Merhaba <strong>{{fullName}}</strong>,</p>
+    <p>Hesabınızı aktifleştirmek için aşağıdaki butona tıklayın:</p>
+    <p><a href="{{verificationUrl}}" style="display:inline-block;padding:12px 24px;background:#534AB7;color:#fff;text-decoration:none;border-radius:8px">Email adresimi doğrula</a></p>
+    <p style="color:#888;font-size:12px">Bu bağlantı 24 saat geçerlidir.</p>`,
+    });
+
+    this.templates.set('password_reset', {
+      subject: 'Şifre sıfırlama talebi',
+      body: `Merhaba {{fullName}},
+    
+    Şifrenizi sıfırlamak için aşağıdaki bağlantıya tıklayın:
+    
+    {{resetUrl}}
+    
+    Bu bağlantı 1 saat geçerlidir. Eğer bu talebi siz yapmadıysanız bu emaili görmezden gelebilirsiniz.`,
+      html: `<h2>Şifre sıfırlama</h2>
+    <p>Merhaba <strong>{{fullName}}</strong>,</p>
+    <p>Şifrenizi sıfırlamak için aşağıdaki butona tıklayın:</p>
+    <p><a href="{{resetUrl}}" style="display:inline-block;padding:12px 24px;background:#D85A30;color:#fff;text-decoration:none;border-radius:8px">Şifremi sıfırla</a></p>
+    <p style="color:#888;font-size:12px">Bu bağlantı 1 saat geçerlidir. Bu talebi siz yapmadıysanız görmezden gelin.</p>`,
+    });
 
     this.templates.set('booking_refunded', {
       subject: 'İade onaylandı — {{bookingNumber}}',

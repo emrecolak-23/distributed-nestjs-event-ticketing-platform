@@ -1,4 +1,10 @@
-import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  Logger,
+  Inject,
+  OnModuleInit,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
@@ -8,11 +14,13 @@ import { createHash, randomUUID } from 'crypto';
 import { UserService } from '../user/user.service';
 import { RefreshToken } from '../user/entities/refresh-token.entity';
 import { JwtPayload } from './interfaces';
+import { ClientKafka } from '@nestjs/microservices';
 
 @Injectable()
-export class AuthService {
+export class AuthService implements OnModuleInit {
   private readonly logger = new Logger(AuthService.name);
   private readonly refreshTokenExpiryDays: number;
+  private readonly appUrl: string;
 
   constructor(
     private readonly userService: UserService,
@@ -20,11 +28,51 @@ export class AuthService {
     private readonly configService: ConfigService,
     @InjectRepository(RefreshToken)
     private readonly refreshTokenRepo: Repository<RefreshToken>,
+    @Inject('AUTH_KAFKA') private readonly kafkaClient: ClientKafka,
   ) {
     this.refreshTokenExpiryDays = this.configService.get(
       'REFRESH_TOKEN_EXPIRY_DAYS',
       1,
     );
+    this.appUrl = this.configService.get('APP_URL', 'http://localhost:8080');
+  }
+
+  async onModuleInit() {
+    await this.kafkaClient.connect();
+  }
+
+  async register(email: string, password: string, fullName: string) {
+    const user = await this.userService.create({
+      email,
+      password,
+      fullName,
+    });
+
+    const token = randomUUID();
+    const tokenHash = this.hashToken(token);
+    const expires = new Date();
+    expires.setHours(expires.getHours() + 24);
+
+    await this.userService.setEmailVerificationToken(
+      user.id,
+      tokenHash,
+      expires,
+    );
+
+    this.kafkaClient.emit('auth.email_verification', {
+      key: user.id,
+      value: {
+        userId: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        verificationUrl: `${this.appUrl}/auth/verify-email?token=${token}`,
+        expiresAt: expires.toISOString(),
+      },
+    });
+
+    this.logger.log(`Email verification email sent to ${user.email}`);
+
+    return user;
   }
 
   async login(email: string, password: string) {
@@ -117,6 +165,39 @@ export class AuthService {
     }
   }
 
+  async resendVerification(userId: string) {
+    const user = await this.userService.findById(userId);
+
+    if (!user) throw new UnauthorizedException('User not found');
+    if (user.emailVerified) return { message: 'Email already verified' };
+
+    const token = randomUUID();
+    const tokenHash = this.hashToken(token);
+    const expires = new Date();
+    expires.setHours(expires.getHours() + 24);
+
+    await this.userService.setEmailVerificationToken(
+      userId,
+      tokenHash,
+      expires,
+    );
+
+    this.kafkaClient.emit('auth.email_verification', {
+      key: userId,
+      value: {
+        userId: userId,
+        email: user.email,
+        fullName: user.fullName,
+        verificationUrl: `${this.appUrl}/auth/verify-email?token=${token}`,
+        expiresAt: expires.toISOString(),
+      },
+    });
+
+    this.logger.log(`Email verification email resent to ${user.email}`);
+
+    return { message: 'Email verification email resent' };
+  }
+
   async requestEmailVerification(userId: string) {
     const user = await this.userService.findById(userId);
     if (!user) throw new UnauthorizedException('User not found');
@@ -131,14 +212,20 @@ export class AuthService {
       expires,
     );
 
-    // TODO: Send email verification email
-    this.logger.log(
-      `Password reset email sent to ${user.email} token: ${token}`,
-    );
+    this.kafkaClient.emit('auth.email_verification', {
+      key: userId,
+      value: {
+        userId: userId,
+        email: user.email,
+        fullName: user.fullName,
+        verificationUrl: `${this.appUrl}/auth/verify-email?token=${token}`,
+        expiresAt: expires.toISOString(),
+      },
+    });
 
-    return {
-      message: 'If the email exists, a reset link has been sent',
-    };
+    this.logger.log(`Email verification email sent to ${user.email}`);
+
+    return { message: 'Email verification email sent' };
   }
 
   async verifyEmail(token: string) {
@@ -172,7 +259,16 @@ export class AuthService {
     expires.setHours(expires.getHours() + 1);
     await this.userService.setPasswordResetToken(user.id, tokenHash, expires);
 
-    // TODO: Send password reset email
+    this.kafkaClient.emit('auth.password_reset', {
+      key: user.id,
+      value: {
+        userId: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        resetUrl: `${this.appUrl}/reset-password?token=${token}`,
+        expiresAt: expires.toISOString(),
+      },
+    });
     this.logger.log(
       `Password reset email sent to ${user.email} token: ${token}`,
     );
