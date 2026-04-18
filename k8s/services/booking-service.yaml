@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: booking-service
+  namespace: ticketing
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: booking-service
+  template:
+    metadata:
+      labels:
+        app: booking-service
+    spec:
+      containers:
+        - name: booking-service
+          image: colakkemree/ticketing-booking-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3003
+          envFrom:
+            - configMapRef:
+                name: shared-config
+            - secretRef:
+                name: ticketing-secrets
+          env:
+            - name: PORT
+              value: "3003"
+            - name: DB_NAME
+              value: "booking_db"
+            - name: SEAT_INVENTORY_GRPC_URL
+              value: "seat-inventory-service:5001"
+            - name: PAYMENT_GRPC_URL
+              value: "payment-service:5002"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "300m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: booking-service
+  namespace: ticketing
+spec:
+  selector:
+    app: booking-service
+  ports:
+    - port: 3003
+      targetPort: 3003

@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: seat-inventory-service
+  namespace: ticketing
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: seat-inventory-service
+  template:
+    metadata:
+      labels:
+        app: seat-inventory-service
+    spec:
+      containers:
+        - name: seat-inventory-service
+          image: colakkemree/ticketing-seat-inventory-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3002
+            - containerPort: 5001
+          envFrom:
+            - configMapRef:
+                name: shared-config
+            - secretRef:
+                name: ticketing-secrets
+          env:
+            - name: PORT
+              value: "3002"
+            - name: DB_NAME
+              value: "seat_inventory_db"
+            - name: GRPC_URL
+              value: "0.0.0.0:5001"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "300m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: seat-inventory-service
+  namespace: ticketing
+spec:
+  selector:
+    app: seat-inventory-service
+  ports:
+    - name: http
+      port: 3002
+      targetPort: 3002
+    - name: grpc
+      port: 5001
+      targetPort: 5001

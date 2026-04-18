@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-service
+  namespace: ticketing
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment-service
+  template:
+    metadata:
+      labels:
+        app: payment-service
+    spec:
+      containers:
+        - name: payment-service
+          image: colakkemree/ticketing-payment-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3004
+            - containerPort: 5002
+          envFrom:
+            - configMapRef:
+                name: shared-config
+            - secretRef:
+                name: ticketing-secrets
+          env:
+            - name: PORT
+              value: "3004"
+            - name: DB_NAME
+              value: "payment_db"
+            - name: PAYMENT_PROVIDER
+              value: "stripe"
+            - name: GRPC_URL
+              value: "0.0.0.0:5002"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "300m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-service
+  namespace: ticketing
+spec:
+  selector:
+    app: payment-service
+  ports:
+    - name: http
+      port: 3004
+      targetPort: 3004
+    - name: grpc
+      port: 5002
+      targetPort: 5002

@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shared-config
+  namespace: ticketing
+data:
+  DB_HOST: "postgres"
+  DB_PORT: "5432"
+  DB_USERNAME: "ticketing"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  KAFKA_BROKER: "kafka:29092"
+  KAFKAJS_NO_PARTITIONER_WARNING: "1"
+  SMTP_HOST: "mailhog"
+  SMTP_PORT: "1025"
+  EMAIL_FROM: "noreply@ticketing.local"
+  APP_URL: "http://api-gateway:8080"
+  NODE_ENV: "production"
