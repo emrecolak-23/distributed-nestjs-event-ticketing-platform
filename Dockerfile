@@ -1,5 +1,5 @@
 FROM  node:25-alpine3.22 AS base
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN npm install -g pnpm@latest
 WORKDIR /app
 
 FROM base AS deps
@@ -20,7 +20,7 @@ ENV SERVICE_NAME=${SERVICE}
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml ./
-RUN corepack enable && corepack prepare pnpm@latest --activate \
+RUN npm install -g pnpm@latest \
     && pnpm install --frozen-lockfile --prod \
     && pnpm store prune
 
@@ -28,3 +28,5 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/libs/grpc/src/proto ./libs/grpc/src/proto
 
 EXPOSE 3000
+
+CMD sh -c "node dist/apps/${SERVICE_NAME}/main.js"
